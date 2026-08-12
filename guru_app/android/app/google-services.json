@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "128836610022",
+    "project_id": "devalay-e577e",
+    "storage_bucket": "devalay-e577e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:128836610022:android:12c01c7be5e44beada1827",
+        "android_client_info": {
+          "package_name": "com.wtf.guru_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBgzN4i-jCnD3B1zkEBdWlSSoRd7fdDNvY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
+

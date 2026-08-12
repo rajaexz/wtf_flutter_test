@@ -1,50 +1,72 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hmssdk_flutter/hmssdk_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
-import 'dart:convert';
 
 import '../../core/utils/app_logger.dart';
 import '../../domain/entities/session_log_entity.dart';
 import 'auth_provider.dart';
 import 'repository_providers.dart';
 
-enum CallState { idle, connecting, connected, error, ended }
+enum CallState { idle, connecting, connected, reconnecting, error, ended }
+
+class PeerTile {
+  final HMSPeer peer;
+  final HMSVideoTrack? videoTrack;
+
+  const PeerTile({required this.peer, this.videoTrack});
+
+  PeerTile copyWith({HMSPeer? peer, HMSVideoTrack? videoTrack}) {
+    return PeerTile(
+      peer: peer ?? this.peer,
+      videoTrack: videoTrack ?? this.videoTrack,
+    );
+  }
+}
 
 class CallStateData {
   final CallState state;
-  final List<HMSPeer> peers;
+  final List<PeerTile> tiles;
   final bool isMuted;
   final bool isVideoOff;
   final String? errorMessage;
   final DateTime? joinedAt;
+  final String? roomId;
+  final bool isMockToken;
 
   const CallStateData({
     required this.state,
-    this.peers = const [],
+    this.tiles = const [],
     this.isMuted = false,
     this.isVideoOff = false,
     this.errorMessage,
     this.joinedAt,
+    this.roomId,
+    this.isMockToken = false,
   });
 
   CallStateData copyWith({
     CallState? state,
-    List<HMSPeer>? peers,
+    List<PeerTile>? tiles,
     bool? isMuted,
     bool? isVideoOff,
     String? errorMessage,
     DateTime? joinedAt,
+    String? roomId,
+    bool? isMockToken,
   }) {
     return CallStateData(
       state: state ?? this.state,
-      peers: peers ?? this.peers,
+      tiles: tiles ?? this.tiles,
       isMuted: isMuted ?? this.isMuted,
       isVideoOff: isVideoOff ?? this.isVideoOff,
       errorMessage: errorMessage ?? this.errorMessage,
       joinedAt: joinedAt ?? this.joinedAt,
+      roomId: roomId ?? this.roomId,
+      isMockToken: isMockToken ?? this.isMockToken,
     );
   }
 }
@@ -53,37 +75,60 @@ final callProvider = AsyncNotifierProvider<CallNotifier, CallStateData>(CallNoti
 
 class CallNotifier extends AsyncNotifier<CallStateData> implements HMSUpdateListener {
   HMSSDK? _sdk;
-  static const _tokenServerUrl = 'http://10.0.2.2:3000';
+
+  /// Android emulator → host machine. Override with --dart-define=TOKEN_SERVER_URL=...
+  static const _tokenServerUrl = String.fromEnvironment(
+    'TOKEN_SERVER_URL',
+    defaultValue: 'http://10.0.2.2:3000',
+  );
 
   @override
   Future<CallStateData> build() async {
     return const CallStateData(state: CallState.idle);
   }
 
-  Future<void> joinRoom(String roomId, String callRequestId) async {
+  Future<void> joinRoom({
+    required String callRequestId,
+    bool micEnabled = true,
+    bool camEnabled = true,
+  }) async {
     final user = ref.read(currentUserProvider).valueOrNull;
     if (user == null) return;
 
     state = const AsyncData(CallStateData(state: CallState.connecting));
-    logger.rtc('[CALL] joining room $roomId as member');
+    logger.rtc('[CALL] joining as member for $callRequestId');
 
     try {
-      final token = await _fetchToken(user.id, 'member');
+      final tokenResult = await _fetchToken(
+        userId: user.id,
+        role: 'member',
+        callRequestId: callRequestId,
+      );
+
+      if (tokenResult.token.startsWith('mock')) {
+        throw Exception(
+          '100ms credentials missing. Add APP_ACCESS_KEY and APP_SECRET to token_server/.env and restart the server.',
+        );
+      }
 
       _sdk = HMSSDK();
       await _sdk!.build();
       _sdk!.addUpdateListener(listener: this);
 
       final config = HMSConfig(
-        authToken: token,
+        authToken: tokenResult.token,
         userName: user.name,
       );
       await _sdk!.join(config: config);
 
+      // Stay in connecting until onJoin — apply pre-join toggles there
       state = AsyncData(
-        const CallStateData(state: CallState.idle).copyWith(
-          state: CallState.connected,
-          joinedAt: DateTime.now(),
+        CallStateData(
+          state: CallState.connecting,
+          roomId: tokenResult.roomId,
+          isMockToken: tokenResult.mock,
+          isMuted: !micEnabled,
+          isVideoOff: !camEnabled,
         ),
       );
     } catch (e) {
@@ -95,44 +140,38 @@ class CallNotifier extends AsyncNotifier<CallStateData> implements HMSUpdateList
     }
   }
 
-  Future<String> _fetchToken(String userId, String role) async {
-    try {
-      final uri = Uri.parse('$_tokenServerUrl/token?userId=$userId&role=$role');
-      final res = await http.get(uri).timeout(const Duration(seconds: 5));
-      if (res.statusCode == 200) {
-        final body = jsonDecode(res.body) as Map<String, dynamic>;
-        return body['token'] as String;
-      }
-    } catch (_) {}
-    return _mockToken(userId, role);
-  }
-
-  String _mockToken(String userId, String role) {
-    logger.rtc('[CALL] using mock token for $userId ($role)');
-    return 'mock_token_${userId}_$role';
+  Future<({String token, String? roomId, bool mock})> _fetchToken({
+    required String userId,
+    required String role,
+    required String callRequestId,
+  }) async {
+    final uri = Uri.parse(
+      '$_tokenServerUrl/token?userId=$userId&role=$role&callRequestId=$callRequestId',
+    );
+    final res = await http.get(uri).timeout(const Duration(seconds: 12));
+    if (res.statusCode != 200) {
+      throw Exception('Token server error ${res.statusCode}: ${res.body}');
+    }
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    return (
+      token: body['token'] as String,
+      roomId: body['roomId'] as String?,
+      mock: body['mock'] == true,
+    );
   }
 
   Future<void> toggleMute() async {
     final current = state.valueOrNull;
     if (current == null || _sdk == null) return;
-    if (current.isMuted) {
-      await _sdk!.unMuteRoomAudioLocally();
-    } else {
-      await _sdk!.muteRoomAudioLocally();
-    }
+    await _sdk!.toggleMicMuteState();
     state = AsyncData(current.copyWith(isMuted: !current.isMuted));
   }
 
   Future<void> toggleVideo() async {
     final current = state.valueOrNull;
     if (current == null || _sdk == null) return;
-    final local = await _sdk!.getLocalPeer();
-    if (local == null) return;
-    final track = local.videoTrack;
-    if (track != null) {
-      await _sdk!.toggleCameraMuteState();
-      state = AsyncData(current.copyWith(isVideoOff: !current.isVideoOff));
-    }
+    await _sdk!.toggleCameraMuteState();
+    state = AsyncData(current.copyWith(isVideoOff: !current.isVideoOff));
   }
 
   Future<void> switchCamera() async {
@@ -166,30 +205,102 @@ class CallNotifier extends AsyncNotifier<CallStateData> implements HMSUpdateList
     state = const AsyncData(CallStateData(state: CallState.ended));
   }
 
+  void _upsertTile(HMSPeer peer, {HMSVideoTrack? track}) {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    final tiles = List<PeerTile>.from(current.tiles);
+    final idx = tiles.indexWhere((t) => t.peer.peerId == peer.peerId);
+    if (idx >= 0) {
+      tiles[idx] = tiles[idx].copyWith(
+        peer: peer,
+        videoTrack: track ?? tiles[idx].videoTrack,
+      );
+    } else {
+      tiles.add(PeerTile(peer: peer, videoTrack: track));
+    }
+    state = AsyncData(current.copyWith(tiles: tiles));
+  }
+
+  void _removeTile(HMSPeer peer) {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    final tiles = current.tiles.where((t) => t.peer.peerId != peer.peerId).toList();
+    state = AsyncData(current.copyWith(tiles: tiles));
+  }
+
   @override
   void onJoin({required HMSRoom room}) {
     logger.rtc('[CALL] joined room ${room.id}');
+    final current = state.valueOrNull;
+    final tiles = <PeerTile>[];
+    for (final p in room.peers ?? const <HMSPeer>[]) {
+      if (p.isLocal) {
+        tiles.add(PeerTile(peer: p, videoTrack: p.videoTrack));
+        break;
+      }
+    }
+
+    state = AsyncData(
+      (current ?? const CallStateData(state: CallState.idle)).copyWith(
+        state: CallState.connected,
+        joinedAt: DateTime.now(),
+        roomId: room.id,
+        tiles: tiles,
+      ),
+    );
+
+    // Apply pre-join mic/cam preferences
+    if (current?.isMuted == true) {
+      _sdk?.toggleMicMuteState();
+    }
+    if (current?.isVideoOff == true) {
+      _sdk?.toggleCameraMuteState();
+    }
   }
 
   @override
   void onPeerUpdate({required HMSPeer peer, required HMSPeerUpdate update}) {
-    final current = state.valueOrNull;
-    if (current == null) return;
-    final peers = List<HMSPeer>.from(current.peers);
     switch (update) {
       case HMSPeerUpdate.peerJoined:
-        if (!peers.any((p) => p.peerId == peer.peerId)) peers.add(peer);
+        _upsertTile(peer);
       case HMSPeerUpdate.peerLeft:
-        peers.removeWhere((p) => p.peerId == peer.peerId);
+        _removeTile(peer);
+      case HMSPeerUpdate.nameChanged:
+      case HMSPeerUpdate.metadataChanged:
+      case HMSPeerUpdate.roleUpdated:
+        _upsertTile(peer);
       default:
         break;
     }
-    state = AsyncData(current.copyWith(peers: peers));
     logger.rtc('[CALL] peer update: ${peer.name} — $update');
   }
 
   @override
-  void onTrackUpdate({required HMSTrack track, required HMSTrackUpdate trackUpdate, required HMSPeer peer}) {}
+  void onTrackUpdate({
+    required HMSTrack track,
+    required HMSTrackUpdate trackUpdate,
+    required HMSPeer peer,
+  }) {
+    if (track.kind != HMSTrackKind.kHMSTrackKindVideo) return;
+    if (track.source != 'REGULAR') return;
+
+    final videoTrack = track as HMSVideoTrack;
+    if (trackUpdate == HMSTrackUpdate.trackRemoved) {
+      final current = state.valueOrNull;
+      if (current == null) return;
+      final tiles = current.tiles.map((t) {
+        if (t.peer.peerId == peer.peerId) {
+          return PeerTile(peer: peer, videoTrack: null);
+        }
+        return t;
+      }).toList();
+      state = AsyncData(current.copyWith(tiles: tiles));
+      return;
+    }
+
+    _upsertTile(peer, track: videoTrack);
+    logger.rtc('[CALL] video track ${trackUpdate.name} for ${peer.name}');
+  }
 
   @override
   void onMessage({required HMSMessage message}) {}
@@ -206,15 +317,25 @@ class CallNotifier extends AsyncNotifier<CallStateData> implements HMSUpdateList
   @override
   void onReconnected() {
     logger.rtc('[CALL] reconnected');
+    final current = state.valueOrNull;
+    if (current != null) {
+      state = AsyncData(current.copyWith(state: CallState.connected));
+    }
   }
 
   @override
   void onReconnecting() {
     logger.rtc('[CALL] reconnecting...');
+    final current = state.valueOrNull;
+    if (current != null) {
+      state = AsyncData(current.copyWith(state: CallState.reconnecting));
+    }
   }
 
   @override
-  void onRemovedFromRoom({required HMSPeerRemovedFromPeer hmsPeerRemovedFromPeer}) {}
+  void onRemovedFromRoom({required HMSPeerRemovedFromPeer hmsPeerRemovedFromPeer}) {
+    state = const AsyncData(CallStateData(state: CallState.ended));
+  }
 
   @override
   void onChangeTrackStateRequest({required HMSTrackChangeRequest hmsTrackChangeRequest}) {}
@@ -234,5 +355,9 @@ class CallNotifier extends AsyncNotifier<CallStateData> implements HMSUpdateList
   @override
   void onHMSError({required HMSException error}) {
     logger.rtc('[CALL] hms error: ${error.message}');
+    state = AsyncData(CallStateData(
+      state: CallState.error,
+      errorMessage: error.message.isNotEmpty ? error.message : '100ms error',
+    ));
   }
 }

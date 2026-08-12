@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:hmssdk_flutter/hmssdk_flutter.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
@@ -74,55 +75,27 @@ class LiveCallScreen extends ConsumerWidget {
             child: Column(
               children: [
                 Expanded(
-                  child: data.peers.isEmpty
-                      ? const Center(
-                          child: Text(
-                            'Waiting for member to join...',
-                            style: TextStyle(color: Colors.white60, fontSize: 16),
-                          ),
-                        )
-                      : GridView.builder(
-                          padding: const EdgeInsets.all(16),
-                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            crossAxisSpacing: 8,
-                            mainAxisSpacing: 8,
-                          ),
-                          itemCount: data.peers.length,
-                          itemBuilder: (_, i) {
-                            final peer = data.peers[i];
-                            return Container(
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF1A1A1A),
-                                borderRadius: BorderRadius.circular(12),
+                  child: Stack(
+                    children: [
+                      _PeerGrid(tiles: data.tiles),
+                      if (data.state == CallState.reconnecting)
+                        const Positioned(
+                          top: 16,
+                          left: 0,
+                          right: 0,
+                          child: Center(
+                            child: Chip(
+                              avatar: SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(strokeWidth: 2),
                               ),
-                              child: Center(
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    CircleAvatar(
-                                      radius: 32,
-                                      backgroundColor: AppColors.primary.withAlpha(40),
-                                      child: Text(
-                                        peer.name[0].toUpperCase(),
-                                        style: const TextStyle(
-                                          fontSize: 24,
-                                          fontWeight: FontWeight.w700,
-                                          color: AppColors.primary,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      peer.name,
-                                      style: const TextStyle(color: Colors.white, fontSize: 14),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
+                              label: Text('Reconnecting...'),
+                            ),
+                          ),
                         ),
+                    ],
+                  ),
                 ),
                 _CallControls(
                   isMuted: data.isMuted,
@@ -216,6 +189,87 @@ class LiveCallScreen extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _PeerGrid extends StatelessWidget {
+  final List<PeerTile> tiles;
+
+  const _PeerGrid({required this.tiles});
+
+  @override
+  Widget build(BuildContext context) {
+    if (tiles.isEmpty) {
+      return const Center(
+        child: Text(
+          'Waiting for member to join...',
+          style: TextStyle(color: Colors.white60, fontSize: 16),
+        ),
+      );
+    }
+
+    return GridView.builder(
+      padding: const EdgeInsets.all(16),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: tiles.length == 1 ? 1 : 2,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+        childAspectRatio: tiles.length == 1 ? 0.75 : 0.85,
+      ),
+      itemCount: tiles.length,
+      itemBuilder: (_, i) {
+        final tile = tiles[i];
+        final track = tile.videoTrack;
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              ColoredBox(
+                color: const Color(0xFF1A1A1A),
+                child: track != null && !track.isMute
+                    ? HMSVideoView(
+                        track: track,
+                        setMirror: tile.peer.isLocal,
+                        key: Key(track.trackId),
+                      )
+                    : Center(
+                        child: CircleAvatar(
+                          radius: 36,
+                          backgroundColor: AppColors.primary.withAlpha(40),
+                          child: Text(
+                            tile.peer.name.isNotEmpty
+                                ? tile.peer.name[0].toUpperCase()
+                                : 'U',
+                            style: const TextStyle(
+                              fontSize: 28,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ),
+                      ),
+              ),
+              Positioned(
+                left: 8,
+                bottom: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    tile.peer.isLocal ? '${tile.peer.name} (You)' : tile.peer.name,
+                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

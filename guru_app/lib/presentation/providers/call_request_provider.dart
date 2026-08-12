@@ -1,9 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/error/failures.dart';
+import '../../core/services/notification_service.dart';
 import '../../domain/entities/call_request_entity.dart';
 import '../../domain/usecases/request_call_usecase.dart';
-import '../../core/error/failures.dart';
 import 'auth_provider.dart';
 import 'repository_providers.dart';
 
@@ -35,7 +36,25 @@ class CallRequestsNotifier
     );
 
     final useCase = RequestCallUseCase(ref.read(callRequestRepositoryProvider));
-    return useCase(request);
+    final failure = await useCase(request);
+    if (failure == null) {
+      await NotificationService.instance.showNow(
+        title: 'Call requested',
+        body: 'Call requested. Waiting for trainer approval.',
+      );
+      await NotificationService.instance.scheduleCallReminder(
+        callRequestId: request.id,
+        scheduledFor: scheduledFor,
+        title: 'Ready to join?',
+        body: 'Your call starts soon. Check mic and camera.',
+      );
+      await NotificationService.instance.notifyRemote(
+        userId: trainerId,
+        title: 'New call request',
+        body: '${user.name}: $note',
+      );
+    }
+    return failure;
   }
 }
 

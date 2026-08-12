@@ -42,11 +42,24 @@ class _PreJoinScreenState extends ConsumerState<PreJoinScreen> {
     }
 
     await ref.read(callProvider.notifier).joinRoom(
-          'room_${widget.callRequestId}',
-          widget.callRequestId,
+          callRequestId: widget.callRequestId,
+          micEnabled: _micEnabled,
+          camEnabled: _camEnabled,
         );
 
     if (!mounted) return;
+    final call = ref.read(callProvider).valueOrNull;
+    if (call?.state == CallState.error) {
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(call?.errorMessage ?? 'Failed to join call'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
     context.go('/call/${widget.callRequestId}/live');
   }
 

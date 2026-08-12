@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:uuid/uuid.dart';
 
+import '../../core/services/notification_service.dart';
 import '../../domain/entities/user_entity.dart';
 import 'repository_providers.dart';
 
@@ -11,18 +11,23 @@ final currentUserProvider = AsyncNotifierProvider<CurrentUserNotifier, UserEntit
 class CurrentUserNotifier extends AsyncNotifier<UserEntity?> {
   @override
   Future<UserEntity?> build() async {
-    return ref.read(authRepositoryProvider).getCurrentUser();
+    final user = await ref.read(authRepositoryProvider).getCurrentUser();
+    if (user != null) {
+      await NotificationService.instance.registerUser(user.id);
+    }
+    return user;
   }
 
   Future<void> createProfile(String name, UserEntity trainer) async {
     final user = UserEntity(
-      id: 'member_${const Uuid().v4()}',
+      id: 'member_dk',
       role: UserRole.member,
       name: name,
       email: '${name.toLowerCase().replaceAll(' ', '_')}@guru.app',
       assignedTrainerId: trainer.id,
     );
     await ref.read(authRepositoryProvider).saveUser(user);
+    await NotificationService.instance.registerUser(user.id);
     state = AsyncData(user);
   }
 

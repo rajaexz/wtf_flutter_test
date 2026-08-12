@@ -1,4 +1,8 @@
 token_server/node_modules/
 token_server/.env
+token_server/firebase-adminsdk.json
+token_server/*firebase-adminsdk*.json
+token_server/chat_store.json
 *.env
 .DS_Store
+

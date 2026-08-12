@@ -19,18 +19,28 @@ Two Flutter apps that work together locally: **Guru App** (Member) + **Trainer A
 
 ## Quick Start
 
-### 1. Token Server
+### 1. Token Server (100ms)
 
 ```bash
 cd token_server
 cp .env.example .env
-# Fill in your 100ms APP_ACCESS_KEY and APP_SECRET
+# REQUIRED for live video: paste real APP_ACCESS_KEY + APP_SECRET from https://dashboard.100ms.live
 npm install
 node index.js
-# Runs on http://localhost:3000
+# Runs on http://localhost:3000 — check GET /health → has100msCreds: true
 ```
 
-### 2. Guru App
+### 2. Firebase (push notifications)
+
+1. Create a Firebase project and add Android apps `com.wtf.guru_app` + `com.wtf.trainer_app`
+2. Replace placeholder files:
+   - `guru_app/android/app/google-services.json`
+   - `trainer_app/android/app/google-services.json`
+3. Optional: set `FCM_SERVER_KEY` in `token_server/.env` for remote `/notify`
+
+Local scheduled call reminders work even without Firebase.
+
+### 3. Guru App
 
 ```bash
 cd guru_app
@@ -38,7 +48,7 @@ flutter pub get
 flutter run
 ```
 
-### 3. Trainer App
+### 4. Trainer App
 
 ```bash
 cd trainer_app
@@ -47,6 +57,7 @@ flutter run
 ```
 
 > Run both apps simultaneously on separate emulators/devices for full cross-app experience.
+> Emulator token URL defaults to `http://10.0.2.2:3000`.
 
 ## Architecture
 

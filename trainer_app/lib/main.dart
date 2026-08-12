@@ -4,12 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app_router.dart';
 import 'core/constants/app_colors.dart';
 import 'core/constants/app_strings.dart';
+import 'core/services/notification_service.dart';
 import 'data/datasources/local_storage.dart';
 import 'presentation/widgets/dev_panel_overlay.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await LocalStorage.init();
+  await NotificationService.instance.init();
   runApp(const ProviderScope(child: TrainerApp()));
 }
 

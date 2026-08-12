@@ -1,6 +1,11 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 
+import '../../core/services/notification_service.dart';
+import '../../core/utils/app_logger.dart';
 import '../../domain/entities/call_request_entity.dart';
 import '../../domain/entities/message_entity.dart';
 import '../../domain/entities/room_meta_entity.dart';
@@ -14,6 +19,11 @@ final callRequestsProvider =
 
 class CallRequestsNotifier
     extends FamilyStreamNotifier<List<CallRequestEntity>, String> {
+  static const _tokenServerUrl = String.fromEnvironment(
+    'TOKEN_SERVER_URL',
+    defaultValue: 'http://10.0.2.2:3000',
+  );
+
   @override
   Stream<List<CallRequestEntity>> build(String arg) {
     return ref.read(callRequestRepositoryProvider).watchRequests(arg);
@@ -25,12 +35,36 @@ class CallRequestsNotifier
           CallRequestStatus.approved,
         );
 
+    // Create real 100ms room (or mock) via token server
+    String hmsRoomId = 'room_${request.id}';
+    try {
+      final res = await http
+          .post(
+            Uri.parse('$_tokenServerUrl/rooms'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'callRequestId': request.id,
+              'description': 'WTF call ${request.note}',
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body) as Map<String, dynamic>;
+        hmsRoomId = body['roomId'] as String? ?? hmsRoomId;
+        logger.rtc('[SCHEDULE] 100ms room created: $hmsRoomId');
+      } else {
+        logger.rtc('[SCHEDULE] room create failed: ${res.body}');
+      }
+    } catch (e) {
+      logger.rtc('[SCHEDULE] room create error: $e');
+    }
+
     final meta = RoomMetaEntity(
       id: const Uuid().v4(),
       callRequestId: request.id,
-      hmsRoomId: 'room_${request.id}',
-      hmsRoleMember: 'member',
-      hmsRoleTrainer: 'trainer',
+      hmsRoomId: hmsRoomId,
+      hmsRoleMember: 'guest',
+      hmsRoleTrainer: 'host',
     );
     await ref.read(callRequestRepositoryProvider).saveRoomMeta(meta);
 
@@ -53,6 +87,23 @@ class CallRequestsNotifier
             status: MessageStatus.sent,
           ),
         );
+
+    // Push + local reminder
+    await NotificationService.instance.showNow(
+      title: 'Call approved',
+      body: 'Call approved for $formatted.',
+    );
+    await NotificationService.instance.scheduleCallReminder(
+      callRequestId: request.id,
+      scheduledFor: request.scheduledFor,
+      title: 'Ready to join?',
+      body: 'Your call starts soon. Check mic and camera.',
+    );
+    await NotificationService.instance.notifyRemote(
+      userId: request.memberId,
+      title: 'Call approved',
+      body: 'Call approved for $formatted.',
+    );
   }
 
   Future<void> decline(CallRequestEntity request, String reason) async {
@@ -78,6 +129,12 @@ class CallRequestsNotifier
             status: MessageStatus.sent,
           ),
         );
+
+    await NotificationService.instance.notifyRemote(
+      userId: request.memberId,
+      title: 'Call declined',
+      body: 'Call request declined. Reason: $reason',
+    );
   }
 
   String _chatId(String memberId, String trainerId) {

@@ -1,6 +1,14 @@
 # guru_app
 
-A new Flutter project.
+Member app (Guru / DK persona) for the WTF Flutter assessment.
+
+## Downloads
+
+| Asset | Link |
+|-------|------|
+| Guru App (APK) | [Download](https://drive.google.com/file/d/1or0t2KgZm5T-oVUHpQ1nANK0xYhpJj0T/view?usp=sharing) |
+| Trainer App (APK) | [Download](https://drive.google.com/file/d/1zappvv3jmTsnKAipWUHkFAFhICC6v_Pj/view?usp=sharing) |
+| Demo Video (Guru / Trainer) | [Watch](https://drive.google.com/file/d/1dHcmZIz9SlR-QsJc29YNInYOP9wVD64g/view?usp=sharing) |
 
 ## Getting Started
 

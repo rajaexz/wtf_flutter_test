@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import 'presentation/providers/auth_provider.dart';
 import 'presentation/screens/auth/login_screen.dart';
+import 'presentation/screens/auth/splash_screen.dart';
 import 'presentation/screens/call/live_call_screen.dart';
 import 'presentation/screens/call/pre_join_screen.dart';
 import 'presentation/screens/chat/chat_list_screen.dart';
@@ -16,16 +17,20 @@ final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(currentUserProvider);
 
   return GoRouter(
-    initialLocation: '/login',
+    initialLocation: '/splash',
     redirect: (context, state) {
+      final loc = state.matchedLocation;
       final user = authState.valueOrNull;
-      final isAuthRoute = state.matchedLocation == '/login';
+      final isSplash = loc == '/splash';
+      final isAuthRoute = loc == '/login';
 
+      if (isSplash) return null;
       if (user != null && isAuthRoute) return '/home';
-      if (user == null && !isAuthRoute) return '/login';
+      if (user == null && !isAuthRoute && !isSplash) return '/login';
       return null;
     },
     routes: [
+      GoRoute(path: '/splash', builder: (_, __) => const SplashScreen()),
       GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
       GoRoute(path: '/home', builder: (_, __) => const HomeScreen()),
       GoRoute(path: '/members', builder: (_, __) => const MembersScreen()),

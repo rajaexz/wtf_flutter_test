@@ -6,6 +6,7 @@ import '../../../core/constants/app_strings.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../widgets/chat_bubble.dart';
+import '../../widgets/trainer_app_bar.dart';
 import '../../widgets/typing_indicator.dart';
 
 class ConversationScreen extends ConsumerStatefulWidget {
@@ -68,44 +69,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        titleSpacing: 0,
-        title: Row(
-          children: [
-            CircleAvatar(
-              radius: 18,
-              backgroundColor: const Color(0xFF1769E0).withAlpha(20),
-              child: const Text(
-                'DK',
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF1769E0),
-                  fontSize: 12,
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'DK',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                Text(
-                  'Member',
-                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                ),
-              ],
-            ),
-          ],
-        ),
+      appBar: trainerAppBar(
+        context: context,
+        title: 'DK',
+        subtitle: 'Member',
       ),
       body: Column(
         children: [

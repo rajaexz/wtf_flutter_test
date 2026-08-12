@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -19,84 +20,185 @@ class HomeScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Hi, ${user.name}',
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary,
+      body: SafeArea(
+        child: CustomScrollView(
+          slivers: [
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 12, 8),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: const LinearGradient(
+                          colors: [AppColors.primaryLight, AppColors.primaryDark],
+                        ),
+                        border: Border.all(color: AppColors.primaryLight.withValues(alpha: 0.4)),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        user.name.isNotEmpty ? user.name[0].toUpperCase() : 'D',
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Hi, ${user.name}',
+                            style: const TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          Container(
+                            margin: const EdgeInsets.only(top: 4),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AppColors.wineSoft,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: AppColors.primary.withValues(alpha: 0.5)),
+                            ),
+                            child: const Text(
+                              'Member • Guru',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.primaryLight,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.logout_rounded, color: AppColors.textSecondary),
+                      onPressed: () {
+                        ref.read(currentUserProvider.notifier).logout();
+                        context.go('/onboarding');
+                      },
+                    ),
+                  ],
+                ),
               ),
             ),
-            const Text(
-              'Member',
-              style: TextStyle(fontSize: 12, color: AppColors.primary),
+            SliverToBoxAdapter(
+              child: Container(
+                margin: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(20),
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Color(0xFF3A1020),
+                      Color(0xFF1A0A10),
+                      AppColors.surface,
+                    ],
+                  ),
+                  border: Border.all(color: AppColors.primary.withValues(alpha: 0.35)),
+                ),
+                child: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Ready to train?',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    SizedBox(height: 6),
+                    Text(
+                      'Chat with Aarav, schedule a call, or review your sessions.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        height: 1.4,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.08, end: 0),
+            ),
+            if (upcoming.isNotEmpty)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Upcoming Calls',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      ...upcoming.map(
+                        (call) => _UpcomingCallCard(
+                          scheduledFor: call.scheduledFor,
+                          callRequestId: call.id,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(20, 12, 20, 8),
+                child: Text(
+                  'Quick Actions',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
+              sliver: SliverList(
+                delegate: SliverChildListDelegate([
+                  _ActionCard(
+                    label: AppStrings.chatWithTrainer,
+                    subtitle: 'Message Aarav anytime',
+                    icon: Icons.chat_bubble_rounded,
+                    onTap: () => context.push('/chat'),
+                  ).animate().fadeIn(delay: 80.ms).slideX(begin: 0.05, end: 0),
+                  _ActionCard(
+                    label: AppStrings.scheduleCall,
+                    subtitle: 'Book a 30-min slot',
+                    icon: Icons.calendar_month_rounded,
+                    onTap: () => context.push('/schedule'),
+                  ).animate().fadeIn(delay: 140.ms).slideX(begin: 0.05, end: 0),
+                  _ActionCard(
+                    label: AppStrings.mySessions,
+                    subtitle: 'Ratings, notes & history',
+                    icon: Icons.bar_chart_rounded,
+                    onTap: () => context.push('/sessions'),
+                  ).animate().fadeIn(delay: 200.ms).slideX(begin: 0.05, end: 0),
+                ]),
+              ),
             ),
           ],
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout_outlined, color: AppColors.textSecondary),
-            onPressed: () {
-              ref.read(currentUserProvider.notifier).logout();
-              context.go('/onboarding');
-            },
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          if (upcoming.isNotEmpty) ...[
-            const Text(
-              'Upcoming Calls',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 8),
-            ...upcoming.map((call) => _UpcomingCallCard(
-                  scheduledFor: call.scheduledFor,
-                  callRequestId: call.id,
-                  memberId: user.id,
-                )),
-            const SizedBox(height: 16),
-          ],
-          const Text(
-            'Quick Actions',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 12),
-          _ActionCard(
-            label: AppStrings.chatWithTrainer,
-            icon: Icons.chat_bubble_outline_rounded,
-            color: AppColors.primary,
-            onTap: () => context.go('/chat'),
-          ),
-          _ActionCard(
-            label: AppStrings.scheduleCall,
-            icon: Icons.calendar_month_outlined,
-            color: AppColors.success,
-            onTap: () => context.go('/schedule'),
-          ),
-          _ActionCard(
-            label: AppStrings.mySessions,
-            icon: Icons.bar_chart_rounded,
-            color: AppColors.warning,
-            onTap: () => context.go('/sessions'),
-          ),
-        ],
       ),
     );
   }
@@ -104,52 +206,77 @@ class HomeScreen extends ConsumerWidget {
 
 class _ActionCard extends StatelessWidget {
   final String label;
+  final String subtitle;
   final IconData icon;
-  final Color color;
   final VoidCallback onTap;
 
   const _ActionCard({
     required this.label,
+    required this.subtitle,
     required this.icon,
-    required this.color,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.divider),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: color.withAlpha(20),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(icon, color: color, size: 24),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(18),
+          child: Ink(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: AppColors.divider),
             ),
-            const SizedBox(width: 16),
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary,
-              ),
+            child: Row(
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    gradient: LinearGradient(
+                      colors: [
+                        AppColors.primary.withValues(alpha: 0.35),
+                        AppColors.wineSoft,
+                      ],
+                    ),
+                  ),
+                  child: Icon(icon, color: AppColors.primaryLight, size: 26),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        label,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppColors.textTertiary),
+              ],
             ),
-            const Spacer(),
-            const Icon(Icons.chevron_right, color: AppColors.textTertiary),
-          ],
+          ),
         ),
       ),
     );
@@ -159,12 +286,10 @@ class _ActionCard extends StatelessWidget {
 class _UpcomingCallCard extends StatelessWidget {
   final DateTime scheduledFor;
   final String callRequestId;
-  final String memberId;
 
   const _UpcomingCallCard({
     required this.scheduledFor,
     required this.callRequestId,
-    required this.memberId,
   });
 
   @override
@@ -175,40 +300,42 @@ class _UpcomingCallCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: isNow ? AppColors.primary.withAlpha(15) : AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
+        color: isNow ? AppColors.wineSoft : AppColors.surface,
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: isNow ? AppColors.primary : AppColors.divider,
+          color: isNow ? AppColors.primaryLight : AppColors.divider,
         ),
       ),
       child: Row(
         children: [
-          const Icon(Icons.videocam_outlined, color: AppColors.primary),
+          const Icon(Icons.videocam_rounded, color: AppColors.primaryLight),
           const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Video Call',
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimary,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Video Call',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
-              ),
-              Text(
-                '${scheduledFor.day}/${scheduledFor.month} at ${scheduledFor.hour.toString().padLeft(2, '0')}:${scheduledFor.minute.toString().padLeft(2, '0')}',
-                style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-              ),
-            ],
+                Text(
+                  '${scheduledFor.day}/${scheduledFor.month} at ${scheduledFor.hour.toString().padLeft(2, '0')}:${scheduledFor.minute.toString().padLeft(2, '0')}',
+                  style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                ),
+              ],
+            ),
           ),
-          const Spacer(),
           if (isNow)
             FilledButton.icon(
-              onPressed: () => context.go('/call/$callRequestId'),
+              onPressed: () => context.push('/call/$callRequestId'),
               icon: const Icon(Icons.videocam, size: 16),
               label: const Text(AppStrings.joinCall),
               style: FilledButton.styleFrom(
+                minimumSize: Size.zero,
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 textStyle: const TextStyle(fontSize: 13),
               ),

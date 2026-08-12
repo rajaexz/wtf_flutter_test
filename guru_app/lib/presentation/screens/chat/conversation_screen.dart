@@ -7,6 +7,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../widgets/chat_bubble.dart';
 import '../../widgets/empty_state.dart';
+import '../../widgets/guru_app_bar.dart';
 import '../../widgets/typing_indicator.dart';
 
 class ConversationScreen extends ConsumerStatefulWidget {
@@ -62,44 +63,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        titleSpacing: 0,
-        title: Row(
-          children: [
-            CircleAvatar(
-              radius: 18,
-              backgroundColor: AppColors.trainerBubble.withAlpha(20),
-              child: const Text(
-                'A',
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.trainerBubble,
-                  fontSize: 14,
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Aarav',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                Text(
-                  'Lead Trainer',
-                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                ),
-              ],
-            ),
-          ],
-        ),
+      appBar: guruAppBar(
+        context: context,
+        title: 'Aarav',
+        subtitle: 'Lead Trainer',
       ),
       body: Column(
         children: [

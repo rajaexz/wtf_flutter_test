@@ -8,6 +8,7 @@ import '../../../core/error/failures.dart';
 import '../../../core/utils/extensions.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/call_request_provider.dart';
+import '../../widgets/guru_app_bar.dart';
 
 class ScheduleScreen extends ConsumerStatefulWidget {
   const ScheduleScreen({super.key});
@@ -119,17 +120,9 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        title: const Text(
-          'Schedule a Call',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
-            color: AppColors.textPrimary,
-          ),
-        ),
+      appBar: guruAppBar(
+        context: context,
+        title: 'Schedule a Call',
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),

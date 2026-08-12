@@ -7,6 +7,7 @@ import '../../../core/utils/extensions.dart';
 import '../../../domain/entities/session_log_entity.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/session_log_provider.dart';
+import '../../widgets/trainer_app_bar.dart';
 
 class SessionsScreen extends ConsumerWidget {
   const SessionsScreen({super.key});
@@ -22,14 +23,7 @@ class SessionsScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        title: const Text(
-          AppStrings.sessions,
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
-        ),
-      ),
+      appBar: trainerAppBar(context: context, title: AppStrings.sessions),
       body: Column(
         children: [
           _FilterChips(current: filter),

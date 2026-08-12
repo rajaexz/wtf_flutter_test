@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'presentation/providers/auth_provider.dart';
 import 'presentation/screens/auth/onboarding_screen.dart';
 import 'presentation/screens/auth/profile_setup_screen.dart';
+import 'presentation/screens/auth/splash_screen.dart';
 import 'presentation/screens/call/live_call_screen.dart';
 import 'presentation/screens/call/pre_join_screen.dart';
 import 'presentation/screens/chat/chat_list_screen.dart';
@@ -16,17 +17,20 @@ final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(currentUserProvider);
 
   return GoRouter(
-    initialLocation: '/onboarding',
+    initialLocation: '/splash',
     redirect: (context, state) {
+      final loc = state.matchedLocation;
       final user = authState.valueOrNull;
-      final isAuthRoute = state.matchedLocation == '/onboarding' ||
-          state.matchedLocation == '/setup';
+      final isSplash = loc == '/splash';
+      final isAuthRoute = loc == '/onboarding' || loc == '/setup';
 
+      if (isSplash) return null;
       if (user != null && isAuthRoute) return '/home';
-      if (user == null && !isAuthRoute) return '/onboarding';
+      if (user == null && !isAuthRoute && !isSplash) return '/onboarding';
       return null;
     },
     routes: [
+      GoRoute(path: '/splash', builder: (_, __) => const SplashScreen()),
       GoRoute(path: '/onboarding', builder: (_, __) => const OnboardingScreen()),
       GoRoute(path: '/setup', builder: (_, __) => const ProfileSetupScreen()),
       GoRoute(path: '/home', builder: (_, __) => const HomeScreen()),

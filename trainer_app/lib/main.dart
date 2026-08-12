@@ -24,16 +24,29 @@ class TrainerApp extends ConsumerWidget {
       title: AppStrings.appName,
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: AppColors.primary,
+        brightness: Brightness.dark,
+        colorScheme: const ColorScheme.dark(
+          primary: AppColors.primary,
+          secondary: AppColors.primaryLight,
           surface: AppColors.surface,
+          error: AppColors.error,
+          onPrimary: Colors.white,
+          onSurface: AppColors.textPrimary,
         ),
         scaffoldBackgroundColor: AppColors.background,
         filledButtonTheme: FilledButtonThemeData(
           style: FilledButton.styleFrom(
             backgroundColor: AppColors.primary,
             foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            minimumSize: const Size.fromHeight(52),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: AppColors.primaryLight,
+            side: const BorderSide(color: AppColors.primary),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           ),
         ),
         appBarTheme: const AppBarTheme(
@@ -41,8 +54,33 @@ class TrainerApp extends ConsumerWidget {
           foregroundColor: AppColors.textPrimary,
           elevation: 0,
           scrolledUnderElevation: 0,
+          centerTitle: false,
         ),
-        fontFamily: 'Roboto',
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: AppColors.surfaceVariant,
+          hintStyle: const TextStyle(color: AppColors.textTertiary),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: AppColors.border),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: AppColors.border),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: AppColors.primaryLight, width: 1.5),
+          ),
+        ),
+        chipTheme: ChipThemeData(
+          backgroundColor: AppColors.surfaceVariant,
+          selectedColor: AppColors.primary,
+          labelStyle: const TextStyle(color: AppColors.textPrimary),
+          side: const BorderSide(color: AppColors.border),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        ),
+        dividerColor: AppColors.divider,
         useMaterial3: true,
       ),
       routerConfig: router,

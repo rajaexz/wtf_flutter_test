@@ -8,6 +8,7 @@ import '../../../core/constants/app_strings.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../widgets/empty_state.dart';
+import '../../widgets/guru_app_bar.dart';
 
 class ChatListScreen extends ConsumerWidget {
   const ChatListScreen({super.key});
@@ -23,22 +24,25 @@ class ChatListScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        title: const Text(
-          'Chats',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
-        ),
+      appBar: guruAppBar(
+        context: context,
+        title: 'Chats',
         actions: [
           IconButton(
-            icon: const Icon(Icons.add, color: AppColors.primary),
-            onPressed: () => context.go('/chat/$chatId'),
+            icon: const Icon(Icons.add_rounded, color: AppColors.primaryLight),
+            onPressed: () => context.push('/chat/$chatId'),
           ),
         ],
       ),
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: AppColors.primary,
+        onPressed: () => context.push('/chat/$chatId'),
+        child: const Icon(Icons.chat_rounded, color: Colors.white),
+      ),
       body: messagesAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => const Center(
+          child: CircularProgressIndicator(color: AppColors.primaryLight),
+        ),
         error: (e, _) => EmptyState(
           title: AppStrings.errorGeneric,
           subtitle: e.toString(),
@@ -51,7 +55,7 @@ class ChatListScreen extends ConsumerWidget {
               subtitle: AppStrings.emptyChatSubtitle,
               icon: Icons.chat_bubble_outline,
               ctaLabel: 'Say hi',
-              onCta: () => context.go('/chat/$chatId'),
+              onCta: () => context.push('/chat/$chatId'),
             );
           }
 
@@ -99,21 +103,27 @@ class _ChatRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: () => context.go('/chat/$chatId'),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      onTap: () => context.push('/chat/$chatId'),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.divider),
+        ),
         child: Row(
           children: [
             Stack(
               children: [
                 CircleAvatar(
                   radius: 26,
-                  backgroundColor: AppColors.trainerBubble.withAlpha(20),
+                  backgroundColor: AppColors.primary.withValues(alpha: 0.25),
                   child: const Text(
                     'A',
                     style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.trainerBubble,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.primaryLight,
                       fontSize: 18,
                     ),
                   ),
@@ -127,7 +137,7 @@ class _ChatRow extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: AppColors.onlineDot,
                       shape: BoxShape.circle,
-                      border: Border.all(color: AppColors.background, width: 2),
+                      border: Border.all(color: AppColors.surface, width: 2),
                     ),
                   ),
                 ),
@@ -145,7 +155,7 @@ class _ChatRow extends StatelessWidget {
                           name,
                           style: TextStyle(
                             fontSize: 15,
-                            fontWeight: unreadCount > 0 ? FontWeight.w700 : FontWeight.w500,
+                            fontWeight: unreadCount > 0 ? FontWeight.w800 : FontWeight.w600,
                             color: AppColors.textPrimary,
                           ),
                         ),
@@ -156,7 +166,7 @@ class _ChatRow extends StatelessWidget {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 4),
                   Row(
                     children: [
                       Expanded(
@@ -169,8 +179,7 @@ class _ChatRow extends StatelessWidget {
                             color: unreadCount > 0
                                 ? AppColors.textPrimary
                                 : AppColors.textSecondary,
-                            fontWeight:
-                                unreadCount > 0 ? FontWeight.w500 : FontWeight.normal,
+                            fontWeight: unreadCount > 0 ? FontWeight.w500 : FontWeight.normal,
                           ),
                         ),
                       ),
@@ -186,7 +195,7 @@ class _ChatRow extends StatelessWidget {
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 11,
-                              fontWeight: FontWeight.w600,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                         ),

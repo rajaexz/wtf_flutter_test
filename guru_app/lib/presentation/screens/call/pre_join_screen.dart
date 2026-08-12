@@ -6,6 +6,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../providers/call_provider.dart';
+import '../../widgets/guru_app_bar.dart';
 
 class PreJoinScreen extends ConsumerStatefulWidget {
   final String callRequestId;
@@ -53,13 +54,9 @@ class _PreJoinScreenState extends ConsumerState<PreJoinScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        title: const Text(
-          'Ready to join?',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
-        ),
+      appBar: guruAppBar(
+        context: context,
+        title: 'Ready to join?',
       ),
       body: Padding(
         padding: const EdgeInsets.all(24),

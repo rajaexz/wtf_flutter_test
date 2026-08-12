@@ -7,6 +7,8 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../../widgets/empty_state.dart';
+import '../../widgets/trainer_app_bar.dart';
 
 class ChatListScreen extends ConsumerWidget {
   const ChatListScreen({super.key});
@@ -23,44 +25,25 @@ class ChatListScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        title: const Text(
-          AppStrings.chats,
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
-            color: AppColors.textPrimary,
-          ),
-        ),
+      appBar: trainerAppBar(context: context, title: AppStrings.chats),
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: AppColors.primary,
+        onPressed: () => context.push('/chat/$chatId/$memberId'),
+        child: const Icon(Icons.chat_rounded, color: Colors.white),
       ),
       body: messagesAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text(e.toString())),
+        loading: () => const Center(
+          child: CircularProgressIndicator(color: AppColors.primaryLight),
+        ),
+        error: (e, _) => Center(child: Text(e.toString(), style: const TextStyle(color: AppColors.textSecondary))),
         data: (messages) {
           if (messages.isEmpty) {
-            return const Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.chat_bubble_outline, size: 64, color: AppColors.textTertiary),
-                  SizedBox(height: 16),
-                  Text(
-                    AppStrings.emptyChatTitle,
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  SizedBox(height: 8),
-                  Text(
-                    AppStrings.emptyChatSubtitle,
-                    style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
-                  ),
-                ],
-              ),
+            return EmptyState(
+              title: AppStrings.emptyChatTitle,
+              subtitle: AppStrings.emptyChatSubtitle,
+              icon: Icons.chat_bubble_outline,
+              ctaLabel: 'Say hi',
+              onCta: () => context.push('/chat/$chatId/$memberId'),
             );
           }
 
@@ -70,21 +53,27 @@ class ChatListScreen extends ConsumerWidget {
             padding: const EdgeInsets.symmetric(vertical: 8),
             children: [
               InkWell(
-                onTap: () => context.go('/chat/$chatId/$memberId'),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                onTap: () => context.push('/chat/$chatId/$memberId'),
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppColors.divider),
+                  ),
                   child: Row(
                     children: [
                       Stack(
                         children: [
                           CircleAvatar(
                             radius: 26,
-                            backgroundColor: const Color(0xFF1769E0).withAlpha(20),
+                            backgroundColor: AppColors.memberBubble.withValues(alpha: 0.25),
                             child: const Text(
                               'DK',
                               style: TextStyle(
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF1769E0),
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.memberBubble,
                                 fontSize: 14,
                               ),
                             ),
@@ -98,7 +87,7 @@ class ChatListScreen extends ConsumerWidget {
                               decoration: BoxDecoration(
                                 color: AppColors.onlineDot,
                                 shape: BoxShape.circle,
-                                border: Border.all(color: AppColors.background, width: 2),
+                                border: Border.all(color: AppColors.surface, width: 2),
                               ),
                             ),
                           ),
@@ -111,26 +100,23 @@ class ChatListScreen extends ConsumerWidget {
                           children: [
                             Row(
                               children: [
-                                const Expanded(
+                                Expanded(
                                   child: Text(
                                     'DK',
                                     style: TextStyle(
                                       fontSize: 15,
-                                      fontWeight: FontWeight.w600,
+                                      fontWeight: unread > 0 ? FontWeight.w800 : FontWeight.w600,
                                       color: AppColors.textPrimary,
                                     ),
                                   ),
                                 ),
                                 Text(
                                   timeago.format(last.createdAt),
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: AppColors.textTertiary,
-                                  ),
+                                  style: const TextStyle(fontSize: 12, color: AppColors.textTertiary),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 3),
+                            const SizedBox(height: 4),
                             Row(
                               children: [
                                 Expanded(
@@ -159,7 +145,7 @@ class ChatListScreen extends ConsumerWidget {
                                       style: const TextStyle(
                                         color: Colors.white,
                                         fontSize: 11,
-                                        fontWeight: FontWeight.w600,
+                                        fontWeight: FontWeight.w700,
                                       ),
                                     ),
                                   ),

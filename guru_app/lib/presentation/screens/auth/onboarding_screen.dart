@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_colors.dart';
@@ -37,7 +38,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   void _next() {
     if (_page < _slides.length - 1) {
       _pageController.nextPage(
-        duration: const Duration(milliseconds: 300),
+        duration: const Duration(milliseconds: 320),
         curve: Curves.easeInOut,
       );
     } else {
@@ -49,56 +50,75 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: PageView.builder(
-                controller: _pageController,
-                itemCount: _slides.length,
-                onPageChanged: (i) => setState(() => _page = i),
-                itemBuilder: (_, i) => _Slide(
-                  title: _slides[i].title,
-                  body: _slides[i].body,
-                  icon: _slides[i].icon,
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF1A0A10), AppColors.background],
+          ),
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () => context.go('/setup'),
+                  child: const Text(
+                    'Skip',
+                    style: TextStyle(color: AppColors.textSecondary),
+                  ),
                 ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 40),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: List.generate(_slides.length, (i) {
-                      return AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        margin: const EdgeInsets.symmetric(horizontal: 4),
-                        width: _page == i ? 24 : 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: _page == i ? AppColors.primary : AppColors.border,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      );
-                    }),
+              Expanded(
+                child: PageView.builder(
+                  controller: _pageController,
+                  itemCount: _slides.length,
+                  onPageChanged: (i) => setState(() => _page = i),
+                  itemBuilder: (_, i) => _Slide(
+                    title: _slides[i].title,
+                    body: _slides[i].body,
+                    icon: _slides[i].icon,
                   ),
-                  const SizedBox(height: 32),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: FilledButton(
-                      onPressed: _next,
-                      child: Text(
-                        _page < _slides.length - 1 ? 'Next' : 'Get Started',
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 36),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List.generate(_slides.length, (i) {
+                        return AnimatedContainer(
+                          duration: const Duration(milliseconds: 220),
+                          margin: const EdgeInsets.symmetric(horizontal: 4),
+                          width: _page == i ? 28 : 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: _page == i ? AppColors.primaryLight : AppColors.border,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        );
+                      }),
+                    ),
+                    const SizedBox(height: 28),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 54,
+                      child: FilledButton(
+                        onPressed: _next,
+                        child: Text(
+                          _page < _slides.length - 1 ? 'Next' : 'Get Started',
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -124,22 +144,34 @@ class _Slide extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
-            width: 120,
-            height: 120,
+            width: 128,
+            height: 128,
             decoration: BoxDecoration(
-              color: AppColors.primaryLight.withAlpha(30),
               shape: BoxShape.circle,
+              gradient: LinearGradient(
+                colors: [
+                  AppColors.primary.withValues(alpha: 0.45),
+                  AppColors.wineSoft,
+                ],
+              ),
+              border: Border.all(color: AppColors.primaryLight.withValues(alpha: 0.4)),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primary.withValues(alpha: 0.35),
+                  blurRadius: 28,
+                ),
+              ],
             ),
-            child: Icon(icon, size: 56, color: AppColors.primary),
-          ),
+            child: Icon(icon, size: 56, color: AppColors.primaryLight),
+          ).animate().scale(duration: 450.ms, curve: Curves.easeOutBack),
           const SizedBox(height: 40),
           Text(
             title,
             style: const TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.w700,
+              fontSize: 26,
+              fontWeight: FontWeight.w800,
               color: AppColors.textPrimary,
-              height: 1.3,
+              height: 1.25,
             ),
             textAlign: TextAlign.center,
           ),
@@ -147,7 +179,7 @@ class _Slide extends StatelessWidget {
           Text(
             body,
             style: const TextStyle(
-              fontSize: 16,
+              fontSize: 15,
               color: AppColors.textSecondary,
               height: 1.6,
             ),

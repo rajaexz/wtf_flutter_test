@@ -6,6 +6,7 @@ import '../../../core/constants/app_strings.dart';
 import '../../../domain/entities/call_request_entity.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/call_request_provider.dart';
+import '../../widgets/trainer_app_bar.dart';
 
 class RequestsScreen extends ConsumerWidget {
   const RequestsScreen({super.key});
@@ -19,14 +20,7 @@ class RequestsScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        title: const Text(
-          'Call Requests',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
-        ),
-      ),
+      appBar: trainerAppBar(context: context, title: 'Call Requests'),
       body: requestsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text(e.toString())),

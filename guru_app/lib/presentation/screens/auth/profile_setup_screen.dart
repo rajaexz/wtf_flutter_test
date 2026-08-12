@@ -6,6 +6,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../domain/entities/user_entity.dart';
 import '../../providers/auth_provider.dart';
+import '../../widgets/guru_app_bar.dart';
 
 class ProfileSetupScreen extends ConsumerStatefulWidget {
   const ProfileSetupScreen({super.key});
@@ -41,30 +42,39 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.background,
-        elevation: 0,
-        title: const Text(
-          AppStrings.createProfileTitle,
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
-        ),
+      appBar: guruAppBar(
+        context: context,
+        title: AppStrings.createProfileTitle,
+        onBack: () => context.go('/onboarding'),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SizedBox(height: 16),
             Center(
-              child: CircleAvatar(
-                radius: 48,
-                backgroundColor: AppColors.primaryLight.withAlpha(30),
+              child: Container(
+                width: 96,
+                height: 96,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: const LinearGradient(
+                    colors: [AppColors.primaryLight, AppColors.primaryDark],
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primary.withValues(alpha: 0.4),
+                      blurRadius: 24,
+                    ),
+                  ],
+                ),
+                alignment: Alignment.center,
                 child: const Text(
                   'DK',
                   style: TextStyle(
                     fontSize: 28,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.primary,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
                   ),
                 ),
               ),
@@ -73,7 +83,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
             const Text(
               'Your name',
               style: TextStyle(
-                fontSize: 14,
+                fontSize: 13,
                 fontWeight: FontWeight.w600,
                 color: AppColors.textSecondary,
               ),
@@ -81,43 +91,30 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
             const SizedBox(height: 8),
             TextField(
               controller: _nameController,
-              decoration: InputDecoration(
-                hintText: 'Enter your name',
-                filled: true,
-                fillColor: AppColors.surface,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: AppColors.border),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: AppColors.border),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: AppColors.primary, width: 2),
-                ),
-              ),
+              style: const TextStyle(color: AppColors.textPrimary),
+              decoration: const InputDecoration(hintText: 'Enter your name'),
             ),
             const SizedBox(height: 24),
             const Text(
               AppStrings.chooseTrainerLabel,
               style: TextStyle(
-                fontSize: 14,
+                fontSize: 13,
                 fontWeight: FontWeight.w600,
                 color: AppColors.textSecondary,
               ),
             ),
             const SizedBox(height: 12),
-            ...trainers.map((t) => _TrainerTile(
-                  trainer: t,
-                  selected: _selectedTrainer?.id == t.id,
-                  onTap: () => setState(() => _selectedTrainer = t),
-                )),
-            const SizedBox(height: 40),
+            ...trainers.map(
+              (t) => _TrainerTile(
+                trainer: t,
+                selected: _selectedTrainer?.id == t.id,
+                onTap: () => setState(() => _selectedTrainer = t),
+              ),
+            ),
+            const SizedBox(height: 36),
             SizedBox(
               width: double.infinity,
-              height: 52,
+              height: 54,
               child: FilledButton(
                 onPressed: _loading ? null : _create,
                 child: _loading
@@ -128,7 +125,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                       )
                     : const Text(
                         AppStrings.getStarted,
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                       ),
               ),
             ),
@@ -155,51 +152,52 @@ class _TrainerTile extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
+        duration: const Duration(milliseconds: 180),
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: selected ? AppColors.primary.withAlpha(15) : AppColors.surface,
-          borderRadius: BorderRadius.circular(12),
+          color: selected ? AppColors.wineSoft : AppColors.surface,
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: selected ? AppColors.primary : AppColors.border,
-            width: selected ? 2 : 1,
+            color: selected ? AppColors.primaryLight : AppColors.border,
+            width: selected ? 1.5 : 1,
           ),
         ),
         child: Row(
           children: [
             CircleAvatar(
               radius: 22,
-              backgroundColor: AppColors.primaryLight.withAlpha(40),
+              backgroundColor: AppColors.primary.withValues(alpha: 0.25),
               child: Text(
                 trainer.name[0],
                 style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.primary,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.primaryLight,
                 ),
               ),
             ),
             const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  trainer.name,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    trainer.name,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
                   ),
-                ),
-                Text(
-                  'Lead Trainer',
-                  style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
-                ),
-              ],
+                  const Text(
+                    'Lead Trainer',
+                    style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                ],
+              ),
             ),
-            const Spacer(),
             if (selected)
-              const Icon(Icons.check_circle, color: AppColors.primary, size: 22),
+              const Icon(Icons.check_circle_rounded, color: AppColors.primaryLight, size: 22),
           ],
         ),
       ),

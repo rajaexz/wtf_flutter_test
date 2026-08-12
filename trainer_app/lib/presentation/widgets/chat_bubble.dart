@@ -25,17 +25,23 @@ class ChatBubble extends StatelessWidget {
         margin: EdgeInsets.only(
           left: isMe ? 48 : 16,
           right: isMe ? 16 : 48,
-          bottom: 4,
+          bottom: 6,
         ),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: isMe ? AppColors.memberBubble : AppColors.surfaceVariant,
+          gradient: isMe
+              ? const LinearGradient(
+                  colors: [AppColors.primaryLight, AppColors.primary],
+                )
+              : null,
+          color: isMe ? null : AppColors.surfaceVariant,
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(16),
             topRight: const Radius.circular(16),
             bottomLeft: Radius.circular(isMe ? 16 : 4),
             bottomRight: Radius.circular(isMe ? 4 : 16),
           ),
+          border: isMe ? null : Border.all(color: AppColors.divider),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.end,

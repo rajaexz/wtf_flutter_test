@@ -21,6 +21,7 @@ class CurrentUserNotifier extends AsyncNotifier<UserEntity?> {
     final saved = await ref.read(authRepositoryProvider).getCurrentUser();
     if (saved != null) {
       await NotificationService.instance.registerUser(saved.id);
+      await ref.read(chatRepositoryProvider).connect(saved.id);
     }
     return saved;
   }
@@ -28,10 +29,12 @@ class CurrentUserNotifier extends AsyncNotifier<UserEntity?> {
   Future<void> loginAsAarav() async {
     await ref.read(authRepositoryProvider).saveUser(_seededTrainer);
     await NotificationService.instance.registerUser(_seededTrainer.id);
+    await ref.read(chatRepositoryProvider).connect(_seededTrainer.id);
     state = const AsyncData(_seededTrainer);
   }
 
   Future<void> logout() async {
+    await ref.read(chatRepositoryProvider).disconnect();
     await ref.read(authRepositoryProvider).clearUser();
     state = const AsyncData(null);
   }

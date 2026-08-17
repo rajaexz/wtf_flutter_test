@@ -22,6 +22,7 @@ class ChatListScreen extends ConsumerWidget {
     final chatId = _chatId(memberId, user.id);
     final messagesAsync = ref.watch(messagesProvider(chatId));
     final unread = ref.watch(unreadCountProvider(chatId));
+    final peerOnline = ref.watch(peerOnlineProvider(memberId)).valueOrNull ?? false;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -85,7 +86,7 @@ class ChatListScreen extends ConsumerWidget {
                               width: 12,
                               height: 12,
                               decoration: BoxDecoration(
-                                color: AppColors.onlineDot,
+                                color: peerOnline ? AppColors.onlineDot : AppColors.textTertiary,
                                 shape: BoxShape.circle,
                                 border: Border.all(color: AppColors.surface, width: 2),
                               ),

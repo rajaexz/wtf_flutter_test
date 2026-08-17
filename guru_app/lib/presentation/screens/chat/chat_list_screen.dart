@@ -61,16 +61,28 @@ class ChatListScreen extends ConsumerWidget {
 
           final last = messages.last;
           final unread = ref.watch(unreadCountProvider(chatId));
+          final peerOnline =
+              trainerId.isEmpty ? false : (ref.watch(peerOnlineProvider(trainerId)).valueOrNull ?? false);
+          final trainers = ref.watch(availableTrainersProvider);
+          String trainerName = trainerId.contains('priya') ? 'Priya' : 'Aarav';
+          for (final t in trainers) {
+            if (t.id == trainerId) {
+              trainerName = t.name;
+              break;
+            }
+          }
 
           return ListView(
             padding: const EdgeInsets.symmetric(vertical: 8),
             children: [
               _ChatRow(
-                name: 'Aarav (Lead Trainer)',
+                name: '$trainerName (Lead Trainer)',
                 lastMessage: last.text,
                 timestamp: last.createdAt,
                 unreadCount: unread,
                 chatId: chatId,
+                online: peerOnline,
+                initial: trainerName.isNotEmpty ? trainerName[0].toUpperCase() : 'T',
               ),
             ],
           );
@@ -91,6 +103,8 @@ class _ChatRow extends StatelessWidget {
   final DateTime timestamp;
   final int unreadCount;
   final String chatId;
+  final bool online;
+  final String initial;
 
   const _ChatRow({
     required this.name,
@@ -98,6 +112,8 @@ class _ChatRow extends StatelessWidget {
     required this.timestamp,
     required this.unreadCount,
     required this.chatId,
+    required this.online,
+    required this.initial,
   });
 
   @override
@@ -119,9 +135,9 @@ class _ChatRow extends StatelessWidget {
                 CircleAvatar(
                   radius: 26,
                   backgroundColor: AppColors.primary.withValues(alpha: 0.25),
-                  child: const Text(
-                    'A',
-                    style: TextStyle(
+                  child: Text(
+                    initial,
+                    style: const TextStyle(
                       fontWeight: FontWeight.w800,
                       color: AppColors.primaryLight,
                       fontSize: 18,
@@ -135,7 +151,7 @@ class _ChatRow extends StatelessWidget {
                     width: 12,
                     height: 12,
                     decoration: BoxDecoration(
-                      color: AppColors.onlineDot,
+                      color: online ? AppColors.onlineDot : AppColors.textTertiary,
                       shape: BoxShape.circle,
                       border: Border.all(color: AppColors.surface, width: 2),
                     ),

@@ -22,6 +22,7 @@ class ConversationScreen extends ConsumerStatefulWidget {
 class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   final _textController = TextEditingController();
   final _scrollController = ScrollController();
+  int _lastMessageCount = 0;
 
   @override
   void initState() {
@@ -55,18 +56,33 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
   }
 
+  String _trainerName(String? trainerId) {
+    if (trainerId == null || trainerId.isEmpty) return 'Trainer';
+    final trainers = ref.read(availableTrainersProvider);
+    for (final t in trainers) {
+      if (t.id == trainerId) return t.name;
+    }
+    if (trainerId.contains('priya')) return 'Priya';
+    if (trainerId.contains('aarav')) return 'Aarav';
+    return 'Trainer';
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(currentUserProvider).valueOrNull;
+    final trainerId = user?.assignedTrainerId ?? '';
+    final trainerName = _trainerName(trainerId);
     final messagesAsync = ref.watch(messagesProvider(widget.chatId));
-    final isTyping = ref.watch(isTypingProvider(widget.chatId));
+    final isTyping = ref.watch(isTypingProvider(widget.chatId)).valueOrNull ?? false;
+    final peerOnline =
+        trainerId.isEmpty ? false : (ref.watch(peerOnlineProvider(trainerId)).valueOrNull ?? false);
 
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: guruAppBar(
         context: context,
-        title: 'Aarav',
-        subtitle: 'Lead Trainer',
+        title: trainerName,
+        subtitle: peerOnline ? 'Online' : 'Lead Trainer',
       ),
       body: Column(
         children: [
@@ -79,7 +95,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                 icon: Icons.error_outline,
               ),
               data: (messages) {
-                if (messages.isEmpty) {
+                if (messages.isEmpty && !isTyping) {
                   return const EmptyState(
                     title: AppStrings.emptyChatTitle,
                     subtitle: AppStrings.emptyChatSubtitle,
@@ -87,7 +103,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                   );
                 }
 
-                WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+                if (messages.length != _lastMessageCount || isTyping) {
+                  _lastMessageCount = messages.length;
+                  WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+                }
 
                 return ListView.builder(
                   controller: _scrollController,
@@ -111,6 +130,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
           _MessageInput(
             controller: _textController,
             onSend: _send,
+            onChanged: (text) {
+              ref.read(messagesProvider(widget.chatId).notifier).onComposerChanged(text);
+            },
           ),
         ],
       ),
@@ -156,10 +178,12 @@ class _QuickReplies extends StatelessWidget {
 class _MessageInput extends StatelessWidget {
   final TextEditingController controller;
   final void Function(String) onSend;
+  final void Function(String) onChanged;
 
   const _MessageInput({
     required this.controller,
     required this.onSend,
+    required this.onChanged,
   });
 
   @override
@@ -180,6 +204,7 @@ class _MessageInput extends StatelessWidget {
               maxLines: 4,
               minLines: 1,
               textCapitalization: TextCapitalization.sentences,
+              onChanged: onChanged,
               decoration: InputDecoration(
                 hintText: 'Message...',
                 filled: true,

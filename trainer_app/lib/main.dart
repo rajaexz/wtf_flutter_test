@@ -15,11 +15,26 @@ void main() async {
   runApp(const ProviderScope(child: TrainerApp()));
 }
 
-class TrainerApp extends ConsumerWidget {
+class TrainerApp extends ConsumerStatefulWidget {
   const TrainerApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<TrainerApp> createState() => _TrainerAppState();
+}
+
+class _TrainerAppState extends ConsumerState<TrainerApp> {
+  @override
+  void initState() {
+    super.initState();
+    // Wire notification tap → navigate to /call/:id
+    NotificationService.instance.onCallTap = (callRequestId) {
+      final router = ref.read(routerProvider);
+      router.push('/call/$callRequestId');
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final router = ref.watch(routerProvider);
 
     return MaterialApp.router(

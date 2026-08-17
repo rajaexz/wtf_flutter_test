@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,16 +7,41 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
+import '../../../core/services/notification_service.dart';
+import '../../../domain/entities/call_request_entity.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/call_request_provider.dart';
 
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  final _scheduledIds = <String>{};
+
+  @override
+  Widget build(BuildContext context) {
     final user = ref.watch(currentUserProvider).valueOrNull;
     if (user == null) return const SizedBox.shrink();
+
+    ref.watch(callRequestsProvider(user.id));
+    ref.listen(callRequestsProvider(user.id), (_, next) {
+      for (final r in next.valueOrNull ?? const <CallRequestEntity>[]) {
+        if (r.status == CallRequestStatus.approved &&
+            !_scheduledIds.contains(r.id)) {
+          _scheduledIds.add(r.id);
+          NotificationService.instance.scheduleCallReminder(
+            callRequestId: r.id,
+            scheduledFor: r.scheduledFor,
+            title: 'Ready to join?',
+            body: 'Your call starts soon. Check mic and camera.',
+          );
+        }
+      }
+    });
 
     final upcoming = ref.watch(upcomingCallsProvider(user.id));
 
@@ -65,7 +92,7 @@ class HomeScreen extends ConsumerWidget {
                             margin: const EdgeInsets.only(top: 4),
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                             decoration: BoxDecoration(
-                              color: AppColors.wineSoft,
+                              color: AppColors.primaryLight.withValues(alpha: 0.4),
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(color: AppColors.primary.withValues(alpha: 0.5)),
                             ),
@@ -249,7 +276,7 @@ class _ActionCard extends StatelessWidget {
                     gradient: LinearGradient(
                       colors: [
                         AppColors.primary.withValues(alpha: 0.35),
-                        AppColors.wineSoft,
+                        AppColors.primaryLight.withValues(alpha: 0.4),
                       ],
                     ),
                   ),
@@ -289,7 +316,7 @@ class _ActionCard extends StatelessWidget {
   }
 }
 
-class _UpcomingCallCard extends StatelessWidget {
+class _UpcomingCallCard extends StatefulWidget {
   final DateTime scheduledFor;
   final String callRequestId;
 
@@ -299,8 +326,29 @@ class _UpcomingCallCard extends StatelessWidget {
   });
 
   @override
+  State<_UpcomingCallCard> createState() => _UpcomingCallCardState();
+}
+
+class _UpcomingCallCardState extends State<_UpcomingCallCard> {
+  late Timer _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final isNow = scheduledFor.difference(DateTime.now()).abs().inMinutes <= 10;
+    final isNow = widget.scheduledFor.difference(DateTime.now()).abs().inMinutes <= 10;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -329,7 +377,7 @@ class _UpcomingCallCard extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  '${scheduledFor.day}/${scheduledFor.month} at ${scheduledFor.hour.toString().padLeft(2, '0')}:${scheduledFor.minute.toString().padLeft(2, '0')}',
+                  '${widget.scheduledFor.day}/${widget.scheduledFor.month} at ${widget.scheduledFor.hour.toString().padLeft(2, '0')}:${widget.scheduledFor.minute.toString().padLeft(2, '0')}',
                   style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
                 ),
               ],
@@ -337,7 +385,7 @@ class _UpcomingCallCard extends StatelessWidget {
           ),
           if (isNow)
             FilledButton.icon(
-              onPressed: () => context.push('/call/$callRequestId'),
+              onPressed: () => context.push('/call/${widget.callRequestId}'),
               icon: const Icon(Icons.videocam, size: 16),
               label: const Text(AppStrings.joinCall),
               style: FilledButton.styleFrom(

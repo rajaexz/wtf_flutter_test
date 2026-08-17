@@ -67,9 +67,11 @@ Apps register device tokens via `POST /fcm-token`. Remote push uses `POST /notif
 Local call reminders in the Flutter apps still work without this.
 ## Chat sync (member ↔ trainer)
 
-Both Flutter apps post/pull messages through this server:
+Realtime chat uses **Socket.IO** on this server (send / receive / typing / read / presence).
+REST endpoints remain for history sync and offline fallback:
 
 ```
+Socket.IO  message:send | message:new | message:read | typing:* | presence:*
 POST /chat/messages
 GET  /chat/messages?chatId=<id>
 POST /chat/read

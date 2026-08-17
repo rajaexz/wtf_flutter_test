@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../core/constants/app_colors.dart';
-import '../../domain/entities/message_entity.dart';
 import '../../core/utils/extensions.dart';
+import '../../domain/entities/message_entity.dart';
 
 class ChatBubble extends StatelessWidget {
   final MessageEntity message;
@@ -14,8 +14,13 @@ class ChatBubble extends StatelessWidget {
     required this.isMe,
   });
 
+  bool get _isMemberSender =>
+      message.senderId.startsWith('member') || message.senderId == 'member_dk';
+
   @override
   Widget build(BuildContext context) {
+    final color = _isMemberSender ? AppColors.memberBubble : AppColors.trainerBubble;
+
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -29,28 +34,22 @@ class ChatBubble extends StatelessWidget {
         ),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          gradient: isMe
-              ? const LinearGradient(
-                  colors: [AppColors.primaryLight, AppColors.primary],
-                )
-              : null,
-          color: isMe ? null : AppColors.surfaceVariant,
+          color: color,
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(16),
             topRight: const Radius.circular(16),
             bottomLeft: Radius.circular(isMe ? 16 : 4),
             bottomRight: Radius.circular(isMe ? 4 : 16),
           ),
-          border: isMe ? null : Border.all(color: AppColors.divider),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             Text(
               message.text,
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 15,
-                color: isMe ? Colors.white : AppColors.textPrimary,
+                color: Colors.white,
                 height: 1.4,
               ),
             ),
@@ -60,10 +59,7 @@ class ChatBubble extends StatelessWidget {
               children: [
                 Text(
                   message.createdAt.chatTimestamp,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: isMe ? Colors.white70 : AppColors.textTertiary,
-                  ),
+                  style: const TextStyle(fontSize: 11, color: Colors.white70),
                 ),
                 if (isMe) ...[
                   const SizedBox(width: 4),
@@ -86,9 +82,12 @@ class _StatusTick extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return switch (status) {
-      MessageStatus.sending => const Icon(Icons.access_time, size: 12, color: Colors.white54),
+      MessageStatus.sending =>
+        const Icon(Icons.access_time, size: 12, color: Colors.white54),
       MessageStatus.sent => const Icon(Icons.done, size: 12, color: Colors.white70),
       MessageStatus.read => const Icon(Icons.done_all, size: 12, color: Colors.white),
+      MessageStatus.failed =>
+        const Icon(Icons.error_outline, size: 12, color: Colors.orangeAccent),
     };
   }
 }

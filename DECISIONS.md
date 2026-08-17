@@ -32,4 +32,4 @@
 
 **Decision:** Use `hmssdk_flutter` with a local Node.js token server. On call approval, a room is created via 100ms Management API. Members and trainers join with role-specific tokens fetched from the token server. Roles enforce permissions: trainer can end room, member cannot.
 
-**Consequences:** Requires a running token server locally. Token expiry handled via re-fetch before join. SDK events drive call state (peer join/leave, track mute/unmute). If 100ms API is unavailable, app falls back to a mock room with a clear in-app notice.
+**Consequences:** Requires a running token server locally. Token expiry handled via re-fetch before join. SDK events drive call state (peer join/leave, track mute/unmute). If 100ms API keys are expired or missing, the app falls back to a **DEMO CALL** (local camera + simulated peer) with an in-app banner — not Agora/Jitsi, because 100ms remains mandatory. Live RTC resumes when keys are restored.

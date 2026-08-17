@@ -1,150 +1,230 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:hmssdk_flutter/hmssdk_flutter.dart';
+import 'package:zego_express_engine/zego_express_engine.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/call_provider.dart';
 import '../../providers/repository_providers.dart';
-import '../../providers/auth_provider.dart';
 
-class LiveCallScreen extends ConsumerWidget {
+const int _zegoAppId = 1089980422;
+const String _zegoAppSign =
+    'eb882413d26c8fe56b3588038b91a66b38e05573f2427ee46b4bcb6414d3eb97';
+
+class LiveCallScreen extends ConsumerStatefulWidget {
   final String callRequestId;
-
   const LiveCallScreen({super.key, required this.callRequestId});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final callAsync = ref.watch(callProvider);
+  ConsumerState<LiveCallScreen> createState() => _LiveCallScreenState();
+}
 
-    return callAsync.when(
-      loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
-      error: (e, _) => Scaffold(body: Center(child: Text('Error: $e'))),
-      data: (data) {
-        if (data.state == CallState.ended) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _showTrainerNotesSheet(context, ref, callRequestId);
+class _LiveCallScreenState extends ConsumerState<LiveCallScreen> {
+  bool _callEnded = false;
+  bool _isMuted = false;
+  bool _isCameraOff = false;
+  bool _isFront = true;
+  bool _remoteJoined = false;
+
+  Widget? _localView;
+  Widget? _remoteView;
+  int? _localViewId;
+  int? _remoteViewId;
+  String? _remoteStreamId;
+
+  String? _myStreamId;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _startCall());
+  }
+
+  // roomId: first 18 alphanum chars of callRequestId — same on both sides
+  String get _roomId {
+    final clean = widget.callRequestId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+    return clean.substring(0, clean.length.clamp(0, 18));
+  }
+
+  Future<void> _startCall() async {
+    if (!mounted) return;
+    final user = ref.read(currentUserProvider).valueOrNull;
+    if (user == null) return;
+
+    ref.read(callProvider.notifier).onCallStarted(widget.callRequestId);
+
+    // userId: strip special chars, max 20 chars
+    final userId = user.id
+        .replaceAll(RegExp(r'[^a-zA-Z0-9]'), '')
+        .substring(0, user.id.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').length.clamp(0, 20));
+
+    // Stream this user publishes — must be unique per user in the room
+    _myStreamId = '${_roomId}_$userId';
+
+    debugPrint('[ZEGO] roomId=$_roomId  userId=$userId  myStream=$_myStreamId');
+
+    await ZegoExpressEngine.createEngineWithProfile(ZegoEngineProfile(
+      _zegoAppId,
+      ZegoScenario.StandardVideoCall,
+      appSign: _zegoAppSign,
+    ));
+
+    // Register ALL callbacks BEFORE loginRoom — events fire immediately on join
+    ZegoExpressEngine.onRoomStateUpdate =
+        (roomID, state, errorCode, extendedData) {
+      debugPrint('[ZEGO] roomState=$state errorCode=$errorCode');
+    };
+
+    ZegoExpressEngine.onRoomUserUpdate = (roomID, updateType, userList) {
+      if (!mounted) return;
+      debugPrint('[ZEGO] userUpdate type=$updateType users=${userList.map((u) => u.userID)}');
+      if (updateType == ZegoUpdateType.Add) {
+        setState(() => _remoteJoined = true);
+      } else {
+        setState(() {
+          _remoteJoined = false;
+          _remoteView = null;
+          _remoteViewId = null;
+        });
+      }
+    };
+
+    ZegoExpressEngine.onRoomStreamUpdate =
+        (roomID, updateType, streamList, extendedData) async {
+      debugPrint('[ZEGO] streamUpdate type=$updateType streams=${streamList.map((s) => s.streamID)}');
+      if (updateType == ZegoUpdateType.Add) {
+        for (final stream in streamList) {
+          // Don't play our own stream
+          if (stream.streamID == _myStreamId) continue;
+          _remoteStreamId = stream.streamID;
+          if (mounted) await _setupRemoteView(_remoteStreamId!);
+        }
+      } else if (updateType == ZegoUpdateType.Delete) {
+        if (mounted) {
+          setState(() {
+            _remoteView = null;
+            _remoteViewId = null;
+            _remoteStreamId = null;
           });
         }
+      }
+    };
 
-        if (data.state == CallState.connecting) {
-          return const Scaffold(
-            backgroundColor: Color(0xFF0D0D0D),
-            body: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(color: AppColors.primary),
-                  SizedBox(height: 16),
-                  Text('Connecting...', style: TextStyle(color: Colors.white, fontSize: 16)),
-                ],
-              ),
-            ),
-          );
-        }
+    ZegoExpressEngine.onPublisherStateUpdate =
+        (streamID, state, errorCode, extendedData) {
+      debugPrint('[ZEGO] publishState=$state streamID=$streamID errorCode=$errorCode');
+    };
 
-        if (data.state == CallState.error) {
-          return Scaffold(
-            backgroundColor: const Color(0xFF0D0D0D),
-            body: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.error_outline, color: AppColors.error, size: 48),
-                  const SizedBox(height: 16),
-                  Text(
-                    data.errorMessage ?? AppStrings.errorGeneric,
-                    style: const TextStyle(color: Colors.white),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 24),
-                  TextButton(
-                    onPressed: () => context.go('/home'),
-                    child: const Text('Go back', style: TextStyle(color: AppColors.primary)),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
+    ZegoExpressEngine.onPlayerStateUpdate =
+        (streamID, state, errorCode, extendedData) {
+      debugPrint('[ZEGO] playState=$state streamID=$streamID errorCode=$errorCode');
+    };
 
-        return Scaffold(
-          backgroundColor: const Color(0xFF0D0D0D),
-          body: SafeArea(
-            child: Column(
-              children: [
-                Expanded(
-                  child: Stack(
-                    children: [
-                      _PeerGrid(tiles: data.tiles),
-                      if (data.state == CallState.reconnecting)
-                        const Positioned(
-                          top: 16,
-                          left: 0,
-                          right: 0,
-                          child: Center(
-                            child: Chip(
-                              avatar: SizedBox(
-                                width: 14,
-                                height: 14,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              ),
-                              label: Text('Reconnecting...'),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                _CallControls(
-                  isMuted: data.isMuted,
-                  isVideoOff: data.isVideoOff,
-                  callRequestId: callRequestId,
-                ),
-              ],
-            ),
-          ),
+    final config = ZegoRoomConfig.defaultConfig();
+    config.isUserStatusNotify = true;
+
+    final loginResult = await ZegoExpressEngine.instance.loginRoom(
+      _roomId,
+      ZegoUser(userId, user.name),
+      config: config,
+    );
+    debugPrint('[ZEGO] loginRoom errorCode=${loginResult.errorCode}');
+
+    if (loginResult.errorCode != 0) return;
+
+    // Start local preview then publish
+    final localWidget = await ZegoExpressEngine.instance.createCanvasView(
+      (viewID) async {
+        _localViewId = viewID;
+        await ZegoExpressEngine.instance.startPreview(
+          canvas: ZegoCanvas(_localViewId!),
+        );
+        debugPrint('[ZEGO] preview started, publishing $_myStreamId');
+        await ZegoExpressEngine.instance.startPublishingStream(_myStreamId!);
+      },
+    );
+    if (mounted) setState(() => _localView = localWidget);
+  }
+
+  Future<void> _setupRemoteView(String streamId) async {
+    final remoteWidget = await ZegoExpressEngine.instance.createCanvasView(
+      (viewID) async {
+        _remoteViewId = viewID;
+        await ZegoExpressEngine.instance.startPlayingStream(
+          streamId,
+          canvas: ZegoCanvas(_remoteViewId!),
         );
       },
     );
+    if (mounted) setState(() => _remoteView = remoteWidget);
   }
 
-  void _showTrainerNotesSheet(BuildContext context, WidgetRef ref, String callRequestId) {
-    final controller = TextEditingController();
+  Future<void> _endCall() async {
+    if (_callEnded) return;
+    _callEnded = true;
 
+    if (_localViewId != null) {
+      await ZegoExpressEngine.instance.stopPreview();
+      await ZegoExpressEngine.instance.destroyCanvasView(_localViewId!);
+    }
+    if (_remoteViewId != null && _remoteStreamId != null) {
+      await ZegoExpressEngine.instance.stopPlayingStream(_remoteStreamId!);
+      await ZegoExpressEngine.instance.destroyCanvasView(_remoteViewId!);
+    }
+    await ZegoExpressEngine.instance.stopPublishingStream();
+    await ZegoExpressEngine.instance.logoutRoom();
+    await ZegoExpressEngine.destroyEngine();
+
+    await ref.read(callProvider.notifier).endCall(widget.callRequestId);
+    if (!mounted) return;
+    _showTrainerNotesSheet();
+  }
+
+  Future<void> _toggleMute() async {
+    final next = !_isMuted;
+    await ZegoExpressEngine.instance.muteMicrophone(next);
+    setState(() => _isMuted = next);
+  }
+
+  Future<void> _toggleCamera() async {
+    final next = !_isCameraOff;
+    await ZegoExpressEngine.instance.enableCamera(!next);
+    setState(() => _isCameraOff = next);
+  }
+
+  Future<void> _flipCamera() async {
+    final next = !_isFront;
+    await ZegoExpressEngine.instance.useFrontCamera(next);
+    setState(() => _isFront = next);
+  }
+
+  void _showTrainerNotesSheet() {
+    final controller = TextEditingController();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       isDismissible: false,
       backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => Padding(
         padding: EdgeInsets.fromLTRB(
-          24,
-          24,
-          24,
-          24 + MediaQuery.of(ctx).viewInsets.bottom,
-        ),
+            24, 24, 24, 24 + MediaQuery.of(ctx).viewInsets.bottom),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Session Complete',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary,
-              ),
-            ),
+            const Text('Session Complete',
+                style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary)),
             const SizedBox(height: 8),
-            const Text(
-              AppStrings.sessionSaved,
-              style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
-            ),
+            const Text(AppStrings.sessionSaved,
+                style:
+                    TextStyle(fontSize: 14, color: AppColors.textSecondary)),
             const SizedBox(height: 16),
             TextField(
               controller: controller,
@@ -154,9 +234,8 @@ class LiveCallScreen extends ConsumerWidget {
                 filled: true,
                 fillColor: AppColors.surfaceVariant,
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none),
               ),
             ),
             const SizedBox(height: 16),
@@ -169,21 +248,25 @@ class LiveCallScreen extends ConsumerWidget {
                   if (notes.isNotEmpty) {
                     final user = ref.read(currentUserProvider).valueOrNull;
                     if (user != null) {
-                      final logs =
-                          await ref.read(sessionLogRepositoryProvider).getLogs('member_dk');
+                      final logs = await ref
+                          .read(sessionLogRepositoryProvider)
+                          .getLogs('member_dk');
                       if (logs.isNotEmpty) {
-                        final updated = logs.first.copyWith(trainerNotes: notes);
-                        await ref.read(sessionLogRepositoryProvider).updateLog(updated);
+                        final updated =
+                            logs.first.copyWith(trainerNotes: notes);
+                        await ref
+                            .read(sessionLogRepositoryProvider)
+                            .updateLog(updated);
                       }
                     }
                   }
-                  if (ctx.mounted) Navigator.pop(ctx);
-                  if (context.mounted) context.go('/sessions');
+                  if (!ctx.mounted) return;
+                  Navigator.pop(ctx);
+                  ctx.go('/sessions');
                 },
-                child: const Text(
-                  AppStrings.markComplete,
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
+                child: const Text(AppStrings.markComplete,
+                    style: TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w600)),
               ),
             ),
           ],
@@ -191,129 +274,94 @@ class LiveCallScreen extends ConsumerWidget {
       ),
     );
   }
-}
 
-class _PeerGrid extends StatelessWidget {
-  final List<PeerTile> tiles;
-
-  const _PeerGrid({required this.tiles});
+  @override
+  void dispose() {
+    if (!_callEnded) {
+      ZegoExpressEngine.instance.stopPreview();
+      ZegoExpressEngine.instance.stopPublishingStream();
+      ZegoExpressEngine.instance.logoutRoom();
+      ZegoExpressEngine.destroyEngine();
+    }
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    if (tiles.isEmpty) {
-      return const Center(
-        child: Text(
-          'Waiting for member to join...',
-          style: TextStyle(color: Colors.white60, fontSize: 16),
-        ),
-      );
-    }
-
-    return GridView.builder(
-      padding: const EdgeInsets.all(16),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: tiles.length == 1 ? 1 : 2,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
-        childAspectRatio: tiles.length == 1 ? 0.75 : 0.85,
-      ),
-      itemCount: tiles.length,
-      itemBuilder: (_, i) {
-        final tile = tiles[i];
-        final track = tile.videoTrack;
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              ColoredBox(
-                color: const Color(0xFF1A1A1A),
-                child: track != null && !track.isMute
-                    ? HMSVideoView(
-                        track: track,
-                        setMirror: tile.peer.isLocal,
-                        key: Key(track.trackId),
-                      )
+    return Scaffold(
+      backgroundColor: const Color(0xFF0D0D0D),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: Stack(children: [
+                _remoteView != null
+                    ? _remoteView!
                     : Center(
-                        child: CircleAvatar(
-                          radius: 36,
-                          backgroundColor: AppColors.primary.withAlpha(40),
-                          child: Text(
-                            tile.peer.name.isNotEmpty
-                                ? tile.peer.name[0].toUpperCase()
-                                : 'U',
-                            style: const TextStyle(
-                              fontSize: 28,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.primary,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const CircularProgressIndicator(
+                                color: AppColors.primary),
+                            const SizedBox(height: 16),
+                            Text(
+                              _remoteJoined
+                                  ? 'Connecting video...'
+                                  : 'Waiting for member to join...',
+                              style: const TextStyle(
+                                  color: Colors.white60, fontSize: 15),
                             ),
-                          ),
+                          ],
                         ),
                       ),
-              ),
-              Positioned(
-                left: 8,
-                bottom: 8,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(8),
+                if (_localView != null)
+                  Positioned(
+                    top: 12,
+                    right: 12,
+                    width: 90,
+                    height: 140,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: _isCameraOff
+                          ? Container(
+                              color: const Color(0xFF1A1A1A),
+                              child: const Icon(Icons.videocam_off,
+                                  color: Colors.white54))
+                          : _localView!,
+                    ),
                   ),
-                  child: Text(
-                    tile.peer.isLocal ? '${tile.peer.name} (You)' : tile.peer.name,
-                    style: const TextStyle(color: Colors.white, fontSize: 12),
-                  ),
-                ),
+              ]),
+            ),
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(vertical: 20, horizontal: 32),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _ControlBtn(
+                      icon: _isMuted ? Icons.mic_off : Icons.mic,
+                      label: _isMuted ? 'Unmute' : 'Mute',
+                      onTap: _toggleMute),
+                  _ControlBtn(
+                      icon: _isCameraOff
+                          ? Icons.videocam_off
+                          : Icons.videocam,
+                      label: _isCameraOff ? 'Video On' : 'Video Off',
+                      onTap: _toggleCamera),
+                  _ControlBtn(
+                      icon: Icons.flip_camera_ios,
+                      label: 'Flip',
+                      onTap: _flipCamera),
+                  _ControlBtn(
+                      icon: Icons.call_end,
+                      label: 'End',
+                      color: AppColors.error,
+                      onTap: _endCall),
+                ],
               ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _CallControls extends ConsumerWidget {
-  final bool isMuted;
-  final bool isVideoOff;
-  final String callRequestId;
-
-  const _CallControls({
-    required this.isMuted,
-    required this.isVideoOff,
-    required this.callRequestId,
-  });
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 32),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          _ControlBtn(
-            icon: isMuted ? Icons.mic_off : Icons.mic,
-            label: isMuted ? 'Unmute' : 'Mute',
-            onTap: () => ref.read(callProvider.notifier).toggleMute(),
-          ),
-          _ControlBtn(
-            icon: isVideoOff ? Icons.videocam_off : Icons.videocam,
-            label: isVideoOff ? 'Video On' : 'Video Off',
-            onTap: () => ref.read(callProvider.notifier).toggleVideo(),
-          ),
-          _ControlBtn(
-            icon: Icons.flip_camera_ios,
-            label: 'Flip',
-            onTap: () => ref.read(callProvider.notifier).switchCamera(),
-          ),
-          _ControlBtn(
-            icon: Icons.call_end,
-            label: 'End',
-            color: AppColors.error,
-            onTap: () => ref.read(callProvider.notifier).endCall(callRequestId),
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -324,13 +372,11 @@ class _ControlBtn extends StatelessWidget {
   final String label;
   final Color? color;
   final VoidCallback onTap;
-
-  const _ControlBtn({
-    required this.icon,
-    required this.label,
-    this.color,
-    required this.onTap,
-  });
+  const _ControlBtn(
+      {required this.icon,
+      required this.label,
+      this.color,
+      required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -343,13 +389,13 @@ class _ControlBtn extends StatelessWidget {
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              color: color ?? Colors.white24,
-              shape: BoxShape.circle,
-            ),
+                color: color ?? Colors.white24, shape: BoxShape.circle),
             child: Icon(icon, color: Colors.white, size: 24),
           ),
           const SizedBox(height: 6),
-          Text(label, style: const TextStyle(color: Colors.white60, fontSize: 12)),
+          Text(label,
+              style:
+                  const TextStyle(color: Colors.white60, fontSize: 12)),
         ],
       ),
     );

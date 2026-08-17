@@ -15,11 +15,26 @@ void main() async {
   runApp(const ProviderScope(child: GuruApp()));
 }
 
-class GuruApp extends ConsumerWidget {
+class GuruApp extends ConsumerStatefulWidget {
   const GuruApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<GuruApp> createState() => _GuruAppState();
+}
+
+class _GuruAppState extends ConsumerState<GuruApp> {
+  @override
+  void initState() {
+    super.initState();
+    // Wire notification tap → navigate to /call/:id
+    NotificationService.instance.onCallTap = (callRequestId) {
+      final router = ref.read(routerProvider);
+      router.push('/call/$callRequestId');
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final router = ref.watch(routerProvider);
 
     return MaterialApp.router(

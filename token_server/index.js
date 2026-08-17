@@ -1,44 +1,70 @@
 require('dotenv').config();
 const http = require('http');
-const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const jwt = require('jsonwebtoken');
+const { Server } = require('socket.io');
 const { initializeApp, cert, getApps } = require('firebase-admin/app');
 const { getMessaging } = require('firebase-admin/messaging');
 
-const APP_ACCESS_KEY = process.env.APP_ACCESS_KEY || '';
-const APP_SECRET = process.env.APP_SECRET || '';
-const TEMPLATE_ID = process.env.TEMPLATE_ID || '';
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
-const ROLE_MAP = {
-  trainer: process.env.HMS_ROLE_TRAINER || 'host',
-  member: process.env.HMS_ROLE_MEMBER || 'guest',
-};
+// ─── JSON file paths ───────────────────────────────────────────────────────────
+const chatStorePath    = path.join(__dirname, 'chat_store.json');
+const callStorePath    = path.join(__dirname, 'call_requests_store.json');
+const fcmStorePath     = path.join(__dirname, 'fcm_tokens.json');
 
-const roomCache = new Map();
-const fcmTokens = new Map();
-const chatStorePath = path.join(__dirname, 'chat_store.json');
-
-function loadChatMessages() {
+// ─── Helpers ───────────────────────────────────────────────────────────────────
+function loadJsonArray(filePath) {
   try {
-    if (fs.existsSync(chatStorePath)) {
-      return JSON.parse(fs.readFileSync(chatStorePath, 'utf8'));
-    }
+    if (fs.existsSync(filePath)) return JSON.parse(fs.readFileSync(filePath, 'utf8'));
   } catch (_) {}
   return [];
 }
 
-function saveChatMessages(messages) {
+function loadJsonObject(filePath) {
   try {
-    fs.writeFileSync(chatStorePath, JSON.stringify(messages, null, 2));
+    if (fs.existsSync(filePath)) return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch (_) {}
+  return {};
+}
+
+function saveJson(filePath, data) {
+  try {
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
   } catch (e) {
-    console.warn('[TOKEN_SERVER] chat save failed:', e.message);
+    console.warn('[SERVER] save failed', filePath, e.message);
   }
 }
 
-let chatMessages = loadChatMessages(); // array of message objects
+// ─── In-memory stores ──────────────────────────────────────────────────────────
+let chatMessages  = loadJsonArray(chatStorePath);
+let callRequests  = loadJsonArray(callStorePath);
+const fcmTokens   = new Map(Object.entries(loadJsonObject(fcmStorePath)));
+
+function saveFcmTokens()    { saveJson(fcmStorePath, Object.fromEntries(fcmTokens)); }
+function saveChatMessages() { saveJson(chatStorePath, chatMessages); }
+function saveCallRequests() { saveJson(callStorePath, callRequests); }
+
+// ─── Firebase Admin (optional FCM) ────────────────────────────────────────────
+let firebaseReady = false;
+const serviceAccountPath =
+  process.env.FIREBASE_SERVICE_ACCOUNT ||
+  path.join(__dirname, 'firebase-adminsdk.json');
+
+if (fs.existsSync(serviceAccountPath)) {
+  try {
+    const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
+    if (getApps().length === 0) {
+      initializeApp({ credential: cert(serviceAccount) });
+    }
+    firebaseReady = true;
+    console.log(`[SERVER] Firebase Admin ready (project: ${serviceAccount.project_id})`);
+  } catch (e) {
+    console.warn('[SERVER] Firebase Admin init failed:', e.message);
+  }
+} else {
+  console.warn('[SERVER] No firebase-adminsdk.json — remote FCM push disabled');
+}
 
 async function pushToUser(userId, title, body, data) {
   const deviceToken = fcmTokens.get(userId);
@@ -46,138 +72,166 @@ async function pushToUser(userId, title, body, data) {
   try {
     const dataPayload = {};
     if (data && typeof data === 'object') {
-      for (const [k, v] of Object.entries(data)) {
-        dataPayload[k] = String(v);
-      }
+      for (const [k, v] of Object.entries(data)) dataPayload[k] = String(v);
     }
     return await getMessaging().send({
       token: deviceToken,
       notification: { title, body: body || '' },
       data: dataPayload,
-      android: {
-        priority: 'high',
-        notification: { channelId: 'wtf_calls' },
-      },
+      android: { priority: 'high', notification: { channelId: 'wtf_calls' } },
     });
   } catch (e) {
-    console.warn('[TOKEN_SERVER] push failed:', e.message);
+    console.warn('[SERVER] push failed:', e.message);
     return null;
   }
 }
 
-const serviceAccountPath =
-  process.env.FIREBASE_SERVICE_ACCOUNT ||
-  path.join(__dirname, 'firebase-adminsdk.json');
+// ─── Call reminder loop ────────────────────────────────────────────────────────
+function startCallReminderLoop() {
+  setInterval(async () => {
+    const now = Date.now();
+    let changed = false;
+    for (const r of callRequests) {
+      if (r.status !== 'approved') continue;
+      const t = new Date(r.scheduledFor).getTime();
+      if (Number.isNaN(t)) continue;
+      const mins = (t - now) / 60000;
 
-let firebaseReady = false;
-if (fs.existsSync(serviceAccountPath)) {
-  try {
-    const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
-    if (getApps().length === 0) {
-      initializeApp({
-        credential: cert(serviceAccount),
-      });
+      if (!r.reminderNotified && mins <= 10 && mins > 0) {
+        const msg = 'Ready to join? Check mic and camera.';
+        await pushToUser(r.memberId, 'Call starting soon', msg, { type: 'call_reminder', callRequestId: r.id });
+        await pushToUser(r.trainerId, 'Call starting soon', msg, { type: 'call_reminder', callRequestId: r.id });
+        r.reminderNotified = true;
+        changed = true;
+        console.log(`[SERVER] T-10 push for call ${r.id}`);
+      }
+
+      if (!r.callNotified && Math.abs(t - now) <= 90000) {
+        const msg = 'Join Call now — your session is starting.';
+        await pushToUser(r.memberId, 'Join Call', msg, { type: 'call_now', callRequestId: r.id });
+        await pushToUser(r.trainerId, 'Join Call', msg, { type: 'call_now', callRequestId: r.id });
+        r.callNotified = true;
+        changed = true;
+        console.log(`[SERVER] call-time push for ${r.id}`);
+      }
     }
-    firebaseReady = true;
-    console.log(`[TOKEN_SERVER] Firebase Admin ready (project: ${serviceAccount.project_id})`);
-  } catch (e) {
-    console.warn('[TOKEN_SERVER] Firebase Admin init failed:', e.message);
-  }
-} else {
-  console.warn('[TOKEN_SERVER] No firebase-adminsdk.json — remote FCM disabled');
+    if (changed) saveCallRequests();
+  }, 20000);
 }
 
-function hasRealCreds() {
-  if (!APP_ACCESS_KEY || !APP_SECRET) return false;
-  if (APP_ACCESS_KEY.includes('your_100ms')) return false;
-  if (APP_SECRET.includes('your_100ms')) return false;
-  return true;
-}
+// ─── Socket.IO (real-time chat) ────────────────────────────────────────────────
+/** @type {import('socket.io').Server | null} */
+let io = null;
+/** userId → Set<socketId> */
+const onlineUsers = new Map();
 
-function managementToken() {
-  const payload = {
-    access_key: APP_ACCESS_KEY,
-    type: 'management',
-    version: 2,
-    iat: Math.floor(Date.now() / 1000),
-    nbf: Math.floor(Date.now() / 1000),
-  };
-  return jwt.sign(payload, APP_SECRET, {
-    algorithm: 'HS256',
-    expiresIn: '24h',
-    jwtid: crypto.randomUUID(),
+function setupSocketIo(httpServer) {
+  io = new Server(httpServer, { cors: { origin: '*' } });
+
+  io.on('connection', (socket) => {
+    const userId = socket.handshake.query.userId;
+    if (userId) {
+      if (!onlineUsers.has(userId)) onlineUsers.set(userId, new Set());
+      onlineUsers.get(userId).add(socket.id);
+      io.emit('presence:online', { userId });
+      console.log(`[SOCKET] connected userId=${userId} socket=${socket.id}`);
+    }
+
+    socket.on('chat:join', (chatId) => {
+      socket.join(`chat:${chatId}`);
+    });
+
+    socket.on('message:send', async (data) => {
+      try {
+        const { message } = await upsertChatMessage(data);
+        broadcastMessage(message);
+      } catch (e) {
+        socket.emit('error', { message: e.message });
+      }
+    });
+
+    socket.on('message:read', (data) => {
+      if (!data.chatId || !data.userId) return;
+      const updated = markChatRead(data.chatId, data.userId);
+      broadcastRead({ chatId: data.chatId, userId: data.userId, updated });
+    });
+
+    socket.on('typing:on',  (data) => { if (data.chatId) socket.to(`chat:${data.chatId}`).emit('typing:on',  data); });
+    socket.on('typing:off', (data) => { if (data.chatId) socket.to(`chat:${data.chatId}`).emit('typing:off', data); });
+
+    socket.on('disconnect', () => {
+      if (userId) {
+        const set = onlineUsers.get(userId);
+        if (set) {
+          set.delete(socket.id);
+          if (set.size === 0) {
+            onlineUsers.delete(userId);
+            io.emit('presence:offline', { userId });
+          }
+        }
+        console.log(`[SOCKET] disconnected userId=${userId} socket=${socket.id}`);
+      }
+    });
   });
 }
 
-function authToken(roomId, userId, hmsRole) {
-  const now = Math.floor(Date.now() / 1000);
-  const payload = {
-    access_key: APP_ACCESS_KEY,
-    room_id: roomId,
-    user_id: userId,
-    role: hmsRole,
-    type: 'app',
-    version: 2,
-    iat: now,
-    nbf: now,
-  };
-  return jwt.sign(payload, APP_SECRET, {
-    algorithm: 'HS256',
-    expiresIn: '24h',
-    jwtid: crypto.randomUUID(),
-  });
-}
-
-function mockToken(userId, role, roomId) {
-  console.warn('[TOKEN_SERVER] No valid 100ms credentials — returning mock token');
-  return `mock.${Buffer.from(
-    JSON.stringify({ userId, role, roomId, iat: Date.now() }),
-  ).toString('base64')}.mock`;
-}
-
-async function createOrGetRoom(roomName, description) {
-  if (roomCache.has(roomName)) {
-    return roomCache.get(roomName);
-  }
-
-  if (!hasRealCreds()) {
-    const mock = { id: `mock_${roomName}`, name: roomName };
-    roomCache.set(roomName, mock);
-    console.warn('[TOKEN_SERVER] mock room created:', mock.id);
-    return mock;
-  }
-
-  const body = {
-    name: roomName,
-    description: description || `WTF call room ${roomName}`,
-  };
-  if (TEMPLATE_ID && !TEMPLATE_ID.includes('your_')) {
-    body.template_id = TEMPLATE_ID;
-  }
-
-  const res = await fetch('https://api.100ms.live/v2/rooms', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${managementToken()}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
-
-  const data = await res.json();
-  if (!res.ok) {
-    const err = new Error(data.message || data.error || `Room create failed (${res.status})`);
-    err.status = res.status;
-    err.details = data;
+// ─── Chat helpers ──────────────────────────────────────────────────────────────
+async function upsertChatMessage(body, { push = true } = {}) {
+  if (!body.id || !body.chatId || !body.senderId || !body.receiverId || !body.text) {
+    const err = new Error('id, chatId, senderId, receiverId, text are required');
+    err.status = 400;
     throw err;
   }
 
-  const room = { id: data.id, name: data.name || roomName };
-  roomCache.set(roomName, room);
-  console.log(`[TOKEN_SERVER] room ready id=${room.id} name=${room.name}`);
-  return room;
+  const existing = chatMessages.findIndex((m) => m.id === body.id);
+  const message = {
+    id: body.id,
+    chatId: body.chatId,
+    senderId: body.senderId,
+    receiverId: body.receiverId,
+    text: body.text,
+    createdAt: body.createdAt || new Date().toISOString(),
+    status: body.status || 'sent',
+  };
+
+  if (existing >= 0) {
+    chatMessages[existing] = { ...chatMessages[existing], ...message };
+  } else {
+    chatMessages.push(message);
+    if (push) {
+      await pushToUser(body.receiverId, 'New message', body.text, {
+        type: 'chat_message',
+        chatId: body.chatId,
+        senderId: body.senderId,
+      });
+    }
+  }
+  saveChatMessages();
+  return { message };
 }
 
+function markChatRead(chatId, userId) {
+  let updated = 0;
+  chatMessages = chatMessages.map((m) => {
+    if (m.chatId === chatId && m.receiverId === userId && m.status !== 'read') {
+      updated++;
+      return { ...m, status: 'read' };
+    }
+    return m;
+  });
+  saveChatMessages();
+  return updated;
+}
+
+function broadcastMessage(message) {
+  if (io) io.to(`chat:${message.chatId}`).emit('message:new', message);
+}
+
+function broadcastRead(payload) {
+  if (io) io.to(`chat:${payload.chatId}`).emit('message:read', payload);
+}
+
+// ─── HTTP helpers ──────────────────────────────────────────────────────────────
 function json(res, status, payload) {
   res.writeHead(status, {
     'Content-Type': 'application/json',
@@ -196,170 +250,153 @@ function readBody(req) {
       try {
         const raw = Buffer.concat(chunks).toString('utf8');
         resolve(raw ? JSON.parse(raw) : {});
-      } catch (e) {
-        reject(e);
-      }
+      } catch (e) { reject(e); }
     });
     req.on('error', reject);
   });
 }
 
+// ─── HTTP server ───────────────────────────────────────────────────────────────
 const server = http.createServer(async (req, res) => {
-  if (req.method === 'OPTIONS') {
-    json(res, 204, {});
-    return;
-  }
+  if (req.method === 'OPTIONS') { json(res, 204, {}); return; }
 
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
   try {
-    // Health
+    // ── Health ─────────────────────────────────────────────────────────────────
     if (req.method === 'GET' && url.pathname === '/health') {
       json(res, 200, {
         ok: true,
-        has100msCreds: hasRealCreds(),
         firebaseReady,
-        roles: ROLE_MAP,
+        onlineUsers: onlineUsers.size,
+        chatMessages: chatMessages.length,
+        callRequests: callRequests.length,
       });
       return;
     }
 
-    // Create / get room by deterministic name (call request id)
-    if (req.method === 'POST' && url.pathname === '/rooms') {
+    // ── Call Requests: create / update ─────────────────────────────────────────
+    if (req.method === 'POST' && url.pathname === '/call-requests') {
       const body = await readBody(req);
-      const callRequestId = body.callRequestId || body.name;
-      if (!callRequestId) {
-        json(res, 400, { error: 'callRequestId is required' });
+      if (!body.id || !body.memberId || !body.trainerId || !body.scheduledFor) {
+        json(res, 400, { error: 'id, memberId, trainerId, scheduledFor are required' });
         return;
       }
-      const roomName = String(callRequestId).startsWith('wtf_')
-        ? String(callRequestId)
-        : `wtf_${callRequestId}`.replace(/[^a-zA-Z0-9._:-]/g, '_');
-      const room = await createOrGetRoom(roomName, body.description);
-      json(res, 200, {
-        roomId: room.id,
-        roomName: room.name,
-        roles: ROLE_MAP,
-        mock: !hasRealCreds(),
-      });
-      return;
-    }
-
-    // Auth token for client SDK join
-    if (req.method === 'GET' && url.pathname === '/token') {
-      const userId = url.searchParams.get('userId');
-      const role = url.searchParams.get('role'); // trainer | member
-      let roomId = url.searchParams.get('roomId');
-      const roomName = url.searchParams.get('roomName') || url.searchParams.get('callRequestId');
-
-      if (!userId || !role) {
-        json(res, 400, { error: 'userId and role are required' });
-        return;
-      }
-      if (!ROLE_MAP[role]) {
-        json(res, 400, { error: `Unknown role: ${role}. Use trainer or member` });
-        return;
-      }
-
-      if (!roomId) {
-        if (!roomName) {
-          json(res, 400, { error: 'roomId or roomName/callRequestId is required' });
-          return;
-        }
-        const name = String(roomName).startsWith('wtf_')
-          ? String(roomName)
-          : `wtf_${roomName}`.replace(/[^a-zA-Z0-9._:-]/g, '_');
-        const room = await createOrGetRoom(name);
-        roomId = room.id;
-      }
-
-      const hmsRole = ROLE_MAP[role];
-      const token = hasRealCreds()
-        ? authToken(roomId, userId, hmsRole)
-        : mockToken(userId, role, roomId);
-
-      console.log(
-        `[TOKEN_SERVER] token userId=${userId} appRole=${role} hmsRole=${hmsRole} roomId=${roomId}`,
-      );
-      json(res, 200, {
-        token,
-        roomId,
-        role: hmsRole,
-        mock: !hasRealCreds(),
-      });
-      return;
-    }
-
-    // --- Chat sync (member ↔ trainer) ---
-    if (req.method === 'POST' && url.pathname === '/chat/messages') {
-      const body = await readBody(req);
-      if (!body.id || !body.chatId || !body.senderId || !body.receiverId || !body.text) {
-        json(res, 400, { error: 'id, chatId, senderId, receiverId, text are required' });
-        return;
-      }
-
-      const existing = chatMessages.findIndex((m) => m.id === body.id);
-      const message = {
+      const idx = callRequests.findIndex((r) => r.id === body.id);
+      const request = {
         id: body.id,
-        chatId: body.chatId,
-        senderId: body.senderId,
-        receiverId: body.receiverId,
-        text: body.text,
-        createdAt: body.createdAt || new Date().toISOString(),
-        status: body.status || 'sent',
+        memberId: body.memberId,
+        trainerId: body.trainerId,
+        requestedAt: body.requestedAt || new Date().toISOString(),
+        scheduledFor: body.scheduledFor,
+        note: body.note || '',
+        status: body.status || 'pending',
+        declineReason: body.declineReason || null,
+        reminderNotified: false,
+        callNotified: false,
       };
-
-      if (existing >= 0) {
-        chatMessages[existing] = { ...chatMessages[existing], ...message };
+      if (idx >= 0) {
+        callRequests[idx] = {
+          ...callRequests[idx],
+          ...request,
+          reminderNotified: callRequests[idx].reminderNotified || false,
+          callNotified: callRequests[idx].callNotified || false,
+        };
       } else {
-        chatMessages.push(message);
-        await pushToUser(message.receiverId, 'New message', message.text, {
-          chatId: message.chatId,
-          type: 'chat',
+        callRequests.push(request);
+        await pushToUser(request.trainerId, 'New call request', request.note || 'Member requested a call', {
+          type: 'call_request',
+          callRequestId: request.id,
         });
       }
-      saveChatMessages(chatMessages);
-      console.log(`[TOKEN_SERVER] chat ${message.senderId} → ${message.receiverId}: ${message.text}`);
-      json(res, 200, { ok: true, message });
+      saveCallRequests();
+      console.log(`[SERVER] call-request saved ${request.id} status=${request.status}`);
+      json(res, 200, { ok: true, request });
       return;
     }
 
+    // ── Call Requests: list ────────────────────────────────────────────────────
+    if (req.method === 'GET' && url.pathname === '/call-requests') {
+      const userId = url.searchParams.get('userId');
+      let list = callRequests;
+      if (userId) list = list.filter((r) => r.memberId === userId || r.trainerId === userId);
+      list = [...list].sort((a, b) => new Date(b.requestedAt) - new Date(a.requestedAt));
+      json(res, 200, { requests: list });
+      return;
+    }
+
+    // ── Call Requests: approve / decline ──────────────────────────────────────
+    if (req.method === 'POST' && url.pathname === '/call-requests/status') {
+      const body = await readBody(req);
+      if (!body.id || !body.status) {
+        json(res, 400, { error: 'id and status are required' });
+        return;
+      }
+      const idx = callRequests.findIndex((r) => r.id === body.id);
+      if (idx < 0) { json(res, 404, { error: 'Call request not found' }); return; }
+
+      callRequests[idx] = {
+        ...callRequests[idx],
+        status: body.status,
+        declineReason: body.declineReason || callRequests[idx].declineReason || null,
+      };
+      saveCallRequests();
+
+      const r = callRequests[idx];
+      if (body.status === 'approved') {
+        await pushToUser(r.memberId, 'Call approved', `Your call for ${r.scheduledFor} is approved!`, {
+          type: 'call_approved', callRequestId: r.id,
+        });
+      } else if (body.status === 'declined') {
+        await pushToUser(r.memberId, 'Call declined', `Reason: ${r.declineReason || 'N/A'}`, {
+          type: 'call_declined', callRequestId: r.id,
+        });
+      }
+      console.log(`[SERVER] call-request ${r.id} → ${r.status}`);
+      json(res, 200, { ok: true, request: r });
+      return;
+    }
+
+    // ── Chat: send message (REST fallback) ─────────────────────────────────────
+    if (req.method === 'POST' && url.pathname === '/chat/messages') {
+      const body = await readBody(req);
+      try {
+        const { message } = await upsertChatMessage(body);
+        broadcastMessage(message);
+        console.log(`[SERVER] chat ${message.senderId} → ${message.receiverId}: ${message.text}`);
+        json(res, 200, { ok: true, message });
+      } catch (e) {
+        json(res, e.status || 400, { error: e.message });
+      }
+      return;
+    }
+
+    // ── Chat: fetch history ────────────────────────────────────────────────────
     if (req.method === 'GET' && url.pathname === '/chat/messages') {
       const chatId = url.searchParams.get('chatId');
       const userId = url.searchParams.get('userId');
       let list = chatMessages;
-      if (chatId) {
-        list = list.filter((m) => m.chatId === chatId);
-      } else if (userId) {
-        list = list.filter((m) => m.senderId === userId || m.receiverId === userId);
-      }
-      list = [...list].sort(
-        (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-      );
+      if (chatId) list = list.filter((m) => m.chatId === chatId);
+      else if (userId) list = list.filter((m) => m.senderId === userId || m.receiverId === userId);
+      list = [...list].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
       json(res, 200, { messages: list });
       return;
     }
 
+    // ── Chat: mark read ────────────────────────────────────────────────────────
     if (req.method === 'POST' && url.pathname === '/chat/read') {
       const body = await readBody(req);
       if (!body.chatId || !body.userId) {
         json(res, 400, { error: 'chatId and userId are required' });
         return;
       }
-      let changed = 0;
-      chatMessages = chatMessages.map((m) => {
-        if (m.chatId === body.chatId && m.receiverId === body.userId && m.status !== 'read') {
-          changed += 1;
-          return { ...m, status: 'read' };
-        }
-        return m;
-      });
-      if (changed > 0) saveChatMessages(chatMessages);
-      json(res, 200, { ok: true, updated: changed });
+      const updated = markChatRead(body.chatId, body.userId);
+      broadcastRead({ chatId: body.chatId, userId: body.userId, updated });
+      json(res, 200, { ok: true, updated });
       return;
     }
 
-    // Register FCM device token (optional push)
+    // ── FCM: register device token ─────────────────────────────────────────────
     if (req.method === 'POST' && url.pathname === '/fcm-token') {
       const body = await readBody(req);
       if (!body.userId || !body.token) {
@@ -367,12 +404,13 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       fcmTokens.set(body.userId, body.token);
-      console.log(`[TOKEN_SERVER] FCM token saved for ${body.userId}`);
+      saveFcmTokens();
+      console.log(`[SERVER] FCM token saved for ${body.userId}`);
       json(res, 200, { ok: true });
       return;
     }
 
-    // Send push via Firebase Admin (FCM HTTP v1)
+    // ── FCM: send push ─────────────────────────────────────────────────────────
     if (req.method === 'POST' && url.pathname === '/notify') {
       const body = await readBody(req);
       const { userId, title, body: message, data } = body;
@@ -380,76 +418,53 @@ const server = http.createServer(async (req, res) => {
         json(res, 400, { error: 'userId and title are required' });
         return;
       }
-
       const deviceToken = fcmTokens.get(userId);
       if (!deviceToken) {
-        json(res, 404, { error: 'No FCM token registered for user', queued: false });
+        json(res, 404, { error: 'No FCM token registered for user' });
         return;
       }
-
       if (!firebaseReady) {
-        console.warn('[TOKEN_SERVER] Firebase Admin not ready — remote push skipped');
-        json(res, 200, {
-          ok: false,
-          reason: 'Firebase Admin not configured',
-          localFallback: true,
-          deviceTokenRegistered: true,
-        });
+        json(res, 200, { ok: false, reason: 'Firebase Admin not configured' });
         return;
       }
-
       const dataPayload = {};
       if (data && typeof data === 'object') {
-        for (const [k, v] of Object.entries(data)) {
-          dataPayload[k] = String(v);
-        }
+        for (const [k, v] of Object.entries(data)) dataPayload[k] = String(v);
       }
-
       const messageId = await getMessaging().send({
         token: deviceToken,
-        notification: {
-          title,
-          body: message || '',
-        },
+        notification: { title, body: message || '' },
         data: dataPayload,
-        android: {
-          priority: 'high',
-          notification: {
-            channelId: 'wtf_calls',
-          },
-        },
+        android: { priority: 'high', notification: { channelId: 'wtf_calls' } },
       });
-
-      console.log(`[TOKEN_SERVER] FCM push to ${userId}: ${messageId}`);
+      console.log(`[SERVER] FCM push to ${userId}: ${messageId}`);
       json(res, 200, { ok: true, messageId });
       return;
     }
 
     json(res, 404, { error: 'Not found' });
   } catch (err) {
-    console.error('[TOKEN_SERVER] error:', err.message, err.details || '');
-    json(res, err.status || 500, {
-      error: err.message || 'Internal error',
-      details: err.details || undefined,
-    });
+    console.error('[SERVER] error:', err.message);
+    json(res, err.status || 500, { error: err.message || 'Internal error' });
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`[TOKEN_SERVER] running on http://localhost:${PORT}`);
-  console.log('[TOKEN_SERVER] GET  /health');
-  console.log('[TOKEN_SERVER] POST /rooms { callRequestId }');
-  console.log('[TOKEN_SERVER] GET  /token?userId=&role=&roomName=');
-  console.log('[TOKEN_SERVER] POST /chat/messages');
-  console.log('[TOKEN_SERVER] GET  /chat/messages?chatId=');
-  console.log('[TOKEN_SERVER] POST /chat/read');
-  console.log('[TOKEN_SERVER] POST /fcm-token { userId, token }');
-  console.log('[TOKEN_SERVER] POST /notify { userId, title, body }');
-  console.log(`[TOKEN_SERVER] HMS roles: trainer→${ROLE_MAP.trainer}, member→${ROLE_MAP.member}`);
-  console.log(`[TOKEN_SERVER] Firebase Admin: ${firebaseReady ? 'ON' : 'OFF'}`);
-  if (!hasRealCreds()) {
-    console.warn(
-      '[TOKEN_SERVER] WARNING: Set real APP_ACCESS_KEY + APP_SECRET in .env for live 100ms calls',
-    );
-  }
+setupSocketIo(server);
+startCallReminderLoop();
+
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`\n[SERVER] ✅ Running on http://0.0.0.0:${PORT}`);
+  console.log(`[SERVER] 📱 LAN access: http://192.168.1.2:${PORT}`);
+  console.log(`[SERVER] 🔥 Firebase: ${firebaseReady ? 'ON' : 'OFF (FCM push disabled)'}`);
+  console.log('[SERVER] Routes:');
+  console.log('  GET  /health');
+  console.log('  POST /call-requests          — create / update');
+  console.log('  GET  /call-requests?userId=  — list');
+  console.log('  POST /call-requests/status   — approve / decline');
+  console.log('  POST /chat/messages          — send (REST fallback)');
+  console.log('  GET  /chat/messages?chatId=  — history');
+  console.log('  POST /chat/read              — mark read');
+  console.log('  POST /fcm-token              — register device token');
+  console.log('  POST /notify                 — send push');
+  console.log('[SERVER] Socket.IO: message:send / message:read / typing:on|off / presence\n');
 });

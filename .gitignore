@@ -3,6 +3,8 @@ token_server/.env
 token_server/firebase-adminsdk.json
 token_server/*firebase-adminsdk*.json
 token_server/chat_store.json
+token_server/call_requests_store.json
+token_server/fcm_tokens.json
 *.env
 .DS_Store
 

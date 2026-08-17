@@ -52,6 +52,12 @@ App flow:
   3. At join time, app fetches token from token server
   4. hmssdk_flutter joins room with token + role
   5. SDK events update call UI state via Riverpod
+
+**Demo fallback (keys expired / dummy workspace):**
+If `token_server` has no valid `APP_ACCESS_KEY` / `APP_SECRET`, join still proceeds in **DEMO CALL** mode:
+local camera preview + simulated remote peer, mute/video/flip/end, then SessionLog + rating/notes.
+Orange banner tells the reviewer this is not live 100ms media. `hmssdk_flutter` remains the production path.
+Put new keys in `.env` and restart the token server to switch back to live rooms.
 ```
 
 ## Data Flow Diagram

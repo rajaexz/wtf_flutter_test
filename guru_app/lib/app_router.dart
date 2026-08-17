@@ -10,6 +10,7 @@ import 'presentation/screens/call/pre_join_screen.dart';
 import 'presentation/screens/chat/chat_list_screen.dart';
 import 'presentation/screens/chat/conversation_screen.dart';
 import 'presentation/screens/home/home_screen.dart';
+import 'presentation/screens/schedule/my_requests_screen.dart';
 import 'presentation/screens/schedule/schedule_screen.dart';
 import 'presentation/screens/sessions/sessions_screen.dart';
 
@@ -42,6 +43,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(path: '/schedule', builder: (_, __) => const ScheduleScreen()),
+      GoRoute(path: '/requests', builder: (_, __) => const MyRequestsScreen()),
       GoRoute(path: '/sessions', builder: (_, __) => const SessionsScreen()),
       GoRoute(
         path: '/call/:callRequestId',

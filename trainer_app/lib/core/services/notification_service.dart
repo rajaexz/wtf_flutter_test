@@ -22,7 +22,7 @@ class NotificationService {
 
   static const _tokenServerUrl = String.fromEnvironment(
     'TOKEN_SERVER_URL',
-    defaultValue: 'http://10.0.2.2:3000',
+    defaultValue: 'http://192.168.1.2:3000',
   );
 
   final _local = FlutterLocalNotificationsPlugin();
@@ -30,10 +30,35 @@ class NotificationService {
   bool firebaseReady = false;
   String? fcmToken;
 
+  static const _details = NotificationDetails(
+    android: AndroidNotificationDetails(
+      'wtf_calls',
+      'Call & Chat',
+      channelDescription: 'Call reminders and chat alerts',
+      importance: Importance.max,
+      priority: Priority.max,
+      fullScreenIntent: true,
+      category: AndroidNotificationCategory.call,
+    ),
+    iOS: DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+    ),
+  );
+
+  /// Set this callback after the router is ready so notification taps can navigate.
+  void Function(String callRequestId)? onCallTap;
+
   Future<void> init() async {
     if (_ready) return;
 
     tz.initializeTimeZones();
+    try {
+      tz.setLocalLocation(tz.getLocation('Asia/Kolkata'));
+    } catch (_) {
+      tz.setLocalLocation(tz.UTC);
+    }
 
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     const ios = DarwinInitializationSettings(
@@ -43,13 +68,19 @@ class NotificationService {
     );
     await _local.initialize(
       const InitializationSettings(android: android, iOS: ios),
+      onDidReceiveNotificationResponse: (details) {
+        final payload = details.payload;
+        if (payload != null && payload.isNotEmpty) {
+          onCallTap?.call(payload);
+        }
+      },
     );
 
     if (Platform.isAndroid) {
-      await _local
-          .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>()
-          ?.requestNotificationsPermission();
+      final androidPlugin = _local.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+      await androidPlugin?.requestNotificationsPermission();
+      await androidPlugin?.requestExactAlarmsPermission();
     }
 
     _ready = true;
@@ -66,21 +97,39 @@ class NotificationService {
       await messaging.requestPermission(alert: true, badge: true, sound: true);
 
       fcmToken = await messaging.getToken();
-      logger.auth('[NOTIFY] FCM token: ${fcmToken != null ? '${fcmToken!.substring(0, 12)}…' : 'null'}');
+      logger.auth(
+        '[NOTIFY] FCM token: ${fcmToken != null ? '${fcmToken!.substring(0, 12)}…' : 'null'}',
+      );
 
       FirebaseMessaging.onMessage.listen((message) {
         final title = message.notification?.title ?? message.data['title'] ?? 'WTF';
         final body = message.notification?.body ?? message.data['body'] ?? '';
         showNow(title: title, body: body);
       });
+
+      // App opened by tapping FCM notification (background/killed)
+      FirebaseMessaging.onMessageOpenedApp.listen((message) {
+        final callId = message.data['callRequestId'] as String?;
+        if (callId != null && callId.isNotEmpty) {
+          onCallTap?.call(callId);
+        }
+      });
+
+      // App launched from killed state via FCM notification
+      final initial = await FirebaseMessaging.instance.getInitialMessage();
+      if (initial != null) {
+        final callId = initial.data['callRequestId'] as String?;
+        if (callId != null && callId.isNotEmpty) {
+          Future.delayed(const Duration(milliseconds: 800), () {
+            onCallTap?.call(callId);
+          });
+        }
+      }
     } catch (e) {
       firebaseReady = false;
       logger.auth('[NOTIFY] Firebase not configured yet: $e');
       if (kDebugMode) {
-        debugPrint(
-          'Add google-services.json / GoogleService-Info.plist to enable FCM. '
-          'Local call reminders still work.',
-        );
+        debugPrint('Local call reminders still work without Firebase.');
       }
     }
   }
@@ -107,16 +156,7 @@ class NotificationService {
       DateTime.now().millisecondsSinceEpoch.remainder(100000),
       title,
       body,
-      const NotificationDetails(
-        android: AndroidNotificationDetails(
-          'wtf_calls',
-          'Call & Chat',
-          channelDescription: 'Call reminders and chat alerts',
-          importance: Importance.high,
-          priority: Priority.high,
-        ),
-        iOS: DarwinNotificationDetails(),
-      ),
+      _details,
     );
   }
 
@@ -128,33 +168,53 @@ class NotificationService {
   }) async {
     if (!_ready) await init();
 
-    final when = scheduledFor.subtract(const Duration(minutes: 10));
+    final baseId = callRequestId.hashCode.abs() % 90000;
+    final soonId = baseId;
+    final nowId = baseId + 1;
+
+    final t10 = scheduledFor.subtract(const Duration(minutes: 10));
+    await _scheduleOne(
+      id: soonId,
+      when: t10,
+      title: title,
+      body: body,
+      callRequestId: callRequestId,
+    );
+    await _scheduleOne(
+      id: nowId,
+      when: scheduledFor,
+      title: 'Join Call',
+      body: 'Your scheduled call is starting now. Open the app to join.',
+      callRequestId: callRequestId,
+    );
+  }
+
+  Future<void> _scheduleOne({
+    required int id,
+    required DateTime when,
+    required String title,
+    required String body,
+    required String callRequestId,
+  }) async {
     if (when.isBefore(DateTime.now())) {
-      await showNow(title: title, body: body);
+      if (when.isAfter(DateTime.now().subtract(const Duration(minutes: 2)))) {
+        await showNow(title: title, body: body);
+      }
       return;
     }
 
-    final id = callRequestId.hashCode.abs() % 100000;
     await _local.zonedSchedule(
       id,
       title,
       body,
       tz.TZDateTime.from(when, tz.local),
-      const NotificationDetails(
-        android: AndroidNotificationDetails(
-          'wtf_calls',
-          'Call & Chat',
-          channelDescription: 'Call reminders and chat alerts',
-          importance: Importance.high,
-          priority: Priority.high,
-        ),
-        iOS: DarwinNotificationDetails(),
-      ),
+      _details,
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       uiLocalNotificationDateInterpretation:
           UILocalNotificationDateInterpretation.absoluteTime,
+      payload: callRequestId,
     );
-    logger.schedule('[NOTIFY] reminder set for $when ($callRequestId)');
+    logger.schedule('[NOTIFY] scheduled #$id at $when ($callRequestId)');
   }
 
   Future<void> notifyRemote({

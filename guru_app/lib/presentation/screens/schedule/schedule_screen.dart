@@ -29,12 +29,21 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
     super.dispose();
   }
 
-  List<DateTime> get _availableDates {
+  Future<void> _pickDate() async {
     final now = DateTime.now();
-    return List.generate(3, (i) {
-      final d = now.add(Duration(days: i));
-      return DateTime(d.year, d.month, d.day);
-    });
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate ?? now.add(const Duration(days: 1)),
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365)),
+      helpText: 'Select call date',
+    );
+    if (picked != null && picked != _selectedDate) {
+      setState(() {
+        _selectedDate = DateTime(picked.year, picked.month, picked.day);
+        _selectedSlot = null;
+      });
+    }
   }
 
   List<DateTime> _slotsFor(DateTime date) {
@@ -81,7 +90,13 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
     }
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text(AppStrings.requestSent)),
+      SnackBar(
+        content: const Text(AppStrings.requestSent),
+        action: SnackBarAction(
+          label: AppStrings.myRequests,
+          onPressed: () => context.push('/requests'),
+        ),
+      ),
     );
     context.pop();
   }
@@ -131,54 +146,44 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
           children: [
             const _SectionLabel('Select a date'),
             const SizedBox(height: 8),
-            SizedBox(
-              height: 72,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: _availableDates.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
-                itemBuilder: (_, i) {
-                  final d = _availableDates[i];
-                  final selected = _selectedDate == d;
-                  return GestureDetector(
-                    onTap: () => setState(() {
-                      _selectedDate = d;
-                      _selectedSlot = null;
-                    }),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      width: 64,
-                      decoration: BoxDecoration(
-                        color: selected ? AppColors.primary : AppColors.surface,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: selected ? AppColors.primary : AppColors.border,
-                        ),
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            d.dayName.substring(0, 3),
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: selected ? Colors.white70 : AppColors.textSecondary,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '${d.day}',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w700,
-                              color: selected ? Colors.white : AppColors.textPrimary,
-                            ),
-                          ),
-                        ],
+            GestureDetector(
+              onTap: _pickDate,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  color: _selectedDate != null ? AppColors.primary : AppColors.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: _selectedDate != null ? AppColors.primary : AppColors.border,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.calendar_today_rounded,
+                      color: _selectedDate != null ? Colors.white : AppColors.textSecondary,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      _selectedDate != null
+                          ? '${_selectedDate!.day}/${_selectedDate!.month}/${_selectedDate!.year}'
+                          : 'Tap to choose a date',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: _selectedDate != null ? Colors.white : AppColors.textSecondary,
                       ),
                     ),
-                  );
-                },
+                    const Spacer(),
+                    Icon(
+                      Icons.arrow_drop_down,
+                      color: _selectedDate != null ? Colors.white70 : AppColors.textTertiary,
+                    ),
+                  ],
+                ),
               ),
             ),
             if (_selectedDate != null) ...[

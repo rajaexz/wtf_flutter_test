@@ -1,4 +1,4 @@
-enum MessageStatus { sending, sent, read }
+enum MessageStatus { sending, sent, read, failed }
 
 class MessageEntity {
   final String id;

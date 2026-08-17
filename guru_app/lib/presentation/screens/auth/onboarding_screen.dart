@@ -151,7 +151,7 @@ class _Slide extends StatelessWidget {
               gradient: LinearGradient(
                 colors: [
                   AppColors.primary.withValues(alpha: 0.45),
-                  AppColors.wineSoft,
+                  AppColors.primaryLight.withValues(alpha: 0.4),
                 ],
               ),
               border: Border.all(color: AppColors.primaryLight.withValues(alpha: 0.4)),

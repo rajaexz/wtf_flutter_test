@@ -5,7 +5,6 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
-import '../../providers/call_provider.dart';
 import '../../widgets/trainer_app_bar.dart';
 
 class PreJoinScreen extends ConsumerStatefulWidget {
@@ -18,8 +17,6 @@ class PreJoinScreen extends ConsumerStatefulWidget {
 }
 
 class _PreJoinScreenState extends ConsumerState<PreJoinScreen> {
-  bool _micEnabled = true;
-  bool _camEnabled = true;
   bool _loading = false;
 
   Future<void> _join() async {
@@ -41,25 +38,6 @@ class _PreJoinScreenState extends ConsumerState<PreJoinScreen> {
       return;
     }
 
-    await ref.read(callProvider.notifier).joinRoom(
-          callRequestId: widget.callRequestId,
-          micEnabled: _micEnabled,
-          camEnabled: _camEnabled,
-        );
-
-    if (!mounted) return;
-    final call = ref.read(callProvider).valueOrNull;
-    if (call?.state == CallState.error) {
-      setState(() => _loading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(call?.errorMessage ?? 'Failed to join call'),
-          backgroundColor: AppColors.error,
-        ),
-      );
-      return;
-    }
-
     context.push('/call/${widget.callRequestId}/live');
   }
 
@@ -74,40 +52,33 @@ class _PreJoinScreenState extends ConsumerState<PreJoinScreen> {
       body: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Expanded(
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.videocam_rounded, size: 80, color: AppColors.primary),
-                    SizedBox(height: 16),
-                    Text(
-                      'Check mic and camera before joining.',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: AppColors.textSecondary,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
+            const Icon(
+              Icons.videocam_outlined,
+              size: 80,
+              color: AppColors.primary,
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              AppStrings.joinPrompt,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
               ),
+              textAlign: TextAlign.center,
             ),
-            _ToggleRow(
-              label: 'Microphone',
-              icon: Icons.mic_outlined,
-              enabled: _micEnabled,
-              onToggle: (v) => setState(() => _micEnabled = v),
+            const SizedBox(height: 8),
+            const Text(
+              'Camera and microphone will be available inside the call.',
+              style: TextStyle(
+                fontSize: 13,
+                color: AppColors.textSecondary,
+              ),
+              textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 12),
-            _ToggleRow(
-              label: 'Camera',
-              icon: Icons.videocam_outlined,
-              enabled: _camEnabled,
-              onToggle: (v) => setState(() => _camEnabled = v),
-            ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 40),
             SizedBox(
               width: double.infinity,
               height: 52,
@@ -118,64 +89,19 @@ class _PreJoinScreenState extends ConsumerState<PreJoinScreen> {
                     ? const SizedBox(
                         width: 20,
                         height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
                       )
                     : const Text(
                         AppStrings.joinCall,
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                        style:
+                            TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                       ),
               ),
             ),
             const SizedBox(height: 16),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _ToggleRow extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final bool enabled;
-  final ValueChanged<bool> onToggle;
-
-  const _ToggleRow({
-    required this.label,
-    required this.icon,
-    required this.enabled,
-    required this.onToggle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.divider),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: enabled ? AppColors.primary : AppColors.textTertiary),
-          const SizedBox(width: 12),
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
-              color: AppColors.textPrimary,
-            ),
-          ),
-          const Spacer(),
-          Switch.adaptive(
-            value: enabled,
-            onChanged: onToggle,
-            activeThumbColor: AppColors.primary,
-            activeTrackColor: AppColors.primaryLight,
-          ),
-        ],
       ),
     );
   }

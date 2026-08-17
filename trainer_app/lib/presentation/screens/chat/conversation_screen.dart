@@ -26,6 +26,7 @@ class ConversationScreen extends ConsumerStatefulWidget {
 class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   final _textController = TextEditingController();
   final _scrollController = ScrollController();
+  int _lastMessageCount = 0;
 
   @override
   void initState() {
@@ -65,14 +66,21 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   Widget build(BuildContext context) {
     final user = ref.watch(currentUserProvider).valueOrNull;
     final messagesAsync = ref.watch(messagesProvider(widget.chatId));
-    final isTyping = ref.watch(isTypingProvider(widget.chatId));
+    final isTyping = ref
+            .watch(
+              isTypingProvider((chatId: widget.chatId, peerId: widget.receiverId)),
+            )
+            .valueOrNull ??
+        false;
+    final peerOnline =
+        ref.watch(peerOnlineProvider(widget.receiverId)).valueOrNull ?? false;
 
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: trainerAppBar(
         context: context,
         title: 'DK',
-        subtitle: 'Member',
+        subtitle: peerOnline ? 'Online' : 'Member',
       ),
       body: Column(
         children: [
@@ -81,7 +89,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => Center(child: Text(e.toString())),
               data: (messages) {
-                if (messages.isEmpty) {
+                if (messages.isEmpty && !isTyping) {
                   return const Center(
                     child: Text(
                       AppStrings.emptyChatSubtitle,
@@ -90,7 +98,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                   );
                 }
 
-                WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+                if (messages.length != _lastMessageCount || isTyping) {
+                  _lastMessageCount = messages.length;
+                  WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+                }
 
                 return ListView.builder(
                   controller: _scrollController,
@@ -113,6 +124,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
           _MessageInput(
             controller: _textController,
             onSend: _send,
+            onChanged: (text) {
+              ref.read(messagesProvider(widget.chatId).notifier).onComposerChanged(text);
+            },
           ),
         ],
       ),
@@ -123,8 +137,13 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 class _MessageInput extends StatelessWidget {
   final TextEditingController controller;
   final void Function(String) onSend;
+  final void Function(String) onChanged;
 
-  const _MessageInput({required this.controller, required this.onSend});
+  const _MessageInput({
+    required this.controller,
+    required this.onSend,
+    required this.onChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -144,6 +163,7 @@ class _MessageInput extends StatelessWidget {
               maxLines: 4,
               minLines: 1,
               textCapitalization: TextCapitalization.sentences,
+              onChanged: onChanged,
               decoration: InputDecoration(
                 hintText: 'Message...',
                 filled: true,

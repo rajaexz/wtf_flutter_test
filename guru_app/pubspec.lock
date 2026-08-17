@@ -496,14 +496,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.0.1"
-  hmssdk_flutter:
-    dependency: "direct main"
-    description:
-      name: hmssdk_flutter
-      sha256: "7756b3e12de88c6da8c75f4ac6bae256b7e86762f49430fbe01b2f39bc337257"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.11.1"
   hooks:
     dependency: transitive
     description:
@@ -644,10 +636,10 @@ packages:
     dependency: transitive
     description:
       name: js
-      sha256: "53385261521cc4a0c4658fd0ad07a7d14591cf8fc33abbceae306ddb974888dc"
+      sha256: f2c445dce49627136094980615a031419f7f3eb393237e4ecd97ac15dea343f3
       url: "https://pub.dev"
     source: hosted
-    version: "0.7.2"
+    version: "0.6.7"
   json_annotation:
     dependency: transitive
     description:
@@ -1037,6 +1029,22 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  socket_io_client:
+    dependency: "direct main"
+    description:
+      name: socket_io_client
+      sha256: f5990ff303d385e7b2150f0e57cca097a8d20c6a2ae0a22cb2d496661ea8ed9b
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.1.6"
+  socket_io_common:
+    dependency: transitive
+    description:
+      name: socket_io_common
+      sha256: "162fbaecbf4bf9a9372a62a341b3550b51dcef2f02f3e5830a297fd48203d45b"
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.1.1"
   source_gen:
     dependency: transitive
     description:
@@ -1301,6 +1309,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.1.3"
+  zego_express_engine:
+    dependency: "direct main"
+    description:
+      name: zego_express_engine
+      sha256: fa43b60e91b4d06d8f2c313de6f6145bc66078d86d823dbf8538d9b55561671f
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.25.0"
 sdks:
   dart: ">=3.12.0 <4.0.0"
   flutter: ">=3.44.0"

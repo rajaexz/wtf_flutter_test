@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -8,15 +7,34 @@ import '../../domain/entities/message_entity.dart';
 import 'auth_provider.dart';
 import 'repository_providers.dart';
 
-final isTypingProvider = StateProvider.family<bool, String>((ref, chatId) => false);
+final isTypingProvider = StreamProvider.family<bool, String>((ref, chatId) {
+  final user = ref.watch(currentUserProvider).valueOrNull;
+  final peerId = user?.assignedTrainerId;
+  if (user == null || peerId == null || peerId.isEmpty) {
+    return Stream.value(false);
+  }
+  return ref.read(chatRepositoryProvider).watchPeerTyping(chatId, peerId);
+});
 
-final messagesProvider = StreamNotifierProviderFamily<MessagesNotifier, List<MessageEntity>, String>(
+final peerOnlineProvider = StreamProvider.family<bool, String>((ref, peerUserId) {
+  return ref.read(chatRepositoryProvider).watchPeerOnline(peerUserId);
+});
+
+final messagesProvider =
+    StreamNotifierProviderFamily<MessagesNotifier, List<MessageEntity>, String>(
   MessagesNotifier.new,
 );
 
 class MessagesNotifier extends FamilyStreamNotifier<List<MessageEntity>, String> {
+  Timer? _typingStopTimer;
+  bool _typingActive = false;
+
   @override
   Stream<List<MessageEntity>> build(String arg) {
+    ref.onDispose(() {
+      _typingStopTimer?.cancel();
+      _stopTyping();
+    });
     return ref.read(chatRepositoryProvider).watchMessages(arg);
   }
 
@@ -26,6 +44,9 @@ class MessagesNotifier extends FamilyStreamNotifier<List<MessageEntity>, String>
 
     final chatId = arg;
     final trainerId = user.assignedTrainerId ?? '';
+    if (trainerId.isEmpty) return;
+
+    _stopTyping();
 
     final message = MessageEntity(
       id: const Uuid().v4(),
@@ -38,11 +59,42 @@ class MessagesNotifier extends FamilyStreamNotifier<List<MessageEntity>, String>
     );
 
     await ref.read(chatRepositoryProvider).sendMessage(message);
+  }
 
-    ref.read(isTypingProvider(chatId).notifier).state = true;
-    final delay = 400 + Random().nextInt(400);
-    await Future.delayed(Duration(milliseconds: delay));
-    ref.read(isTypingProvider(chatId).notifier).state = false;
+  void onComposerChanged(String text) {
+    final user = ref.read(currentUserProvider).valueOrNull;
+    if (user == null) return;
+
+    if (text.trim().isEmpty) {
+      _stopTyping();
+      return;
+    }
+
+    if (!_typingActive) {
+      _typingActive = true;
+      ref.read(chatRepositoryProvider).setTyping(
+            chatId: arg,
+            userId: user.id,
+            isTyping: true,
+          );
+    }
+
+    _typingStopTimer?.cancel();
+    _typingStopTimer = Timer(const Duration(milliseconds: 1500), _stopTyping);
+  }
+
+  void _stopTyping() {
+    _typingStopTimer?.cancel();
+    _typingStopTimer = null;
+    if (!_typingActive) return;
+    _typingActive = false;
+    final user = ref.read(currentUserProvider).valueOrNull;
+    if (user == null) return;
+    ref.read(chatRepositoryProvider).setTyping(
+          chatId: arg,
+          userId: user.id,
+          isTyping: false,
+        );
   }
 
   Future<void> markRead() async {
@@ -53,7 +105,10 @@ class MessagesNotifier extends FamilyStreamNotifier<List<MessageEntity>, String>
 }
 
 final unreadCountProvider = Provider.family<int, String>((ref, chatId) {
-  final user = ref.read(currentUserProvider).valueOrNull;
+  final user = ref.watch(currentUserProvider).valueOrNull;
   if (user == null) return 0;
-  return ref.read(chatRepositoryProvider).getUnreadCount(chatId, user.id);
+  final messages = ref.watch(messagesProvider(chatId)).valueOrNull ?? [];
+  return messages
+      .where((m) => m.receiverId == user.id && m.status != MessageStatus.read)
+      .length;
 });

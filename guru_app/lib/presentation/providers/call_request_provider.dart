@@ -64,6 +64,7 @@ final upcomingCallsProvider = Provider.family<List<CallRequestEntity>, String>((
   return requests
       .where((r) =>
           r.status == CallRequestStatus.approved &&
-          r.scheduledFor.isAfter(now.subtract(const Duration(hours: 1))))
+          // Show until 2 hours after scheduled time (covers late joins / testing)
+          r.scheduledFor.isAfter(now.subtract(const Duration(hours: 2))))
       .toList();
 });

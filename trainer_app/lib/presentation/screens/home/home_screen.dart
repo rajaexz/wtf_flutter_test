@@ -348,7 +348,9 @@ class _UpcomingCallCardState extends State<_UpcomingCallCard> {
 
   @override
   Widget build(BuildContext context) {
-    final isNow = widget.scheduledFor.difference(DateTime.now()).abs().inMinutes <= 10;
+    // Show Join button from 30 min before until 2 hours after scheduled time
+    final diff = widget.scheduledFor.difference(DateTime.now());
+    final isNow = diff.inMinutes <= 30 && diff.inHours >= -2;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),

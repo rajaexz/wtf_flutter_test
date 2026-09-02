@@ -97,7 +97,9 @@ function startCallReminderLoop() {
       if (Number.isNaN(t)) continue;
       const mins = (t - now) / 60000;
 
-      if (!r.reminderNotified && mins <= 10 && mins > 0) {
+      // T-10 reminder: only between 10 min and 1 min before the call
+      // (min > 1 guard prevents firing when call is already starting/past)
+      if (!r.reminderNotified && mins <= 10 && mins > 1) {
         const msg = 'Ready to join? Check mic and camera.';
         await pushToUser(r.memberId, 'Call starting soon', msg, { type: 'call_reminder', callRequestId: r.id });
         await pushToUser(r.trainerId, 'Call starting soon', msg, { type: 'call_reminder', callRequestId: r.id });
@@ -106,6 +108,7 @@ function startCallReminderLoop() {
         console.log(`[SERVER] T-10 push for call ${r.id}`);
       }
 
+      // Call-time push: within 90 seconds of the scheduled time (±)
       if (!r.callNotified && Math.abs(t - now) <= 90000) {
         const msg = 'Join Call now — your session is starting.';
         await pushToUser(r.memberId, 'Join Call', msg, { type: 'call_now', callRequestId: r.id });
@@ -311,15 +314,17 @@ const server = http.createServer(async (req, res) => {
         note: body.note || '',
         status: body.status || 'pending',
         declineReason: body.declineReason || null,
+        // Always false for brand new requests
         reminderNotified: false,
         callNotified: false,
       };
       if (idx >= 0) {
+        // Preserve reminder flags on update — never reset them once set
         callRequests[idx] = {
           ...callRequests[idx],
           ...request,
-          reminderNotified: callRequests[idx].reminderNotified || false,
-          callNotified: callRequests[idx].callNotified || false,
+          reminderNotified: callRequests[idx].reminderNotified ?? false,
+          callNotified: callRequests[idx].callNotified ?? false,
         };
       } else {
         callRequests.push(request);
@@ -473,7 +478,7 @@ startCallReminderLoop();
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`\n[SERVER] ✅ Running on http://0.0.0.0:${PORT}`);
-  console.log(`[SERVER] 📱 LAN access: http://192.168.1.3:${PORT}`);
+  console.log(`[SERVER] 📱 LAN access: http://192.168.0.199:${PORT}`);
   console.log(`[SERVER] 🔥 Firebase: ${firebaseReady ? 'ON' : 'OFF (FCM push disabled)'}`);
   console.log('[SERVER] Routes:');
   console.log('  GET  /health');

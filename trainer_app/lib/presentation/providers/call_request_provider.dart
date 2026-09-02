@@ -21,7 +21,7 @@ class CallRequestsNotifier
     extends FamilyStreamNotifier<List<CallRequestEntity>, String> {
   static const _tokenServerUrl = String.fromEnvironment(
     'TOKEN_SERVER_URL',
-    defaultValue: 'http://192.168.1.3:3000',
+    defaultValue: 'http://192.168.0.199:3000',
   );
 
   @override
@@ -149,6 +149,7 @@ final upcomingCallsProvider = Provider.family<List<CallRequestEntity>, String>((
   return requests
       .where((r) =>
           r.status == CallRequestStatus.approved &&
-          r.scheduledFor.isAfter(now.subtract(const Duration(hours: 1))))
+          // Show until 2 hours after scheduled time (covers late joins / testing)
+          r.scheduledFor.isAfter(now.subtract(const Duration(hours: 2))))
       .toList();
 });

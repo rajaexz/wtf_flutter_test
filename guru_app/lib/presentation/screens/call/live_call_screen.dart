@@ -141,31 +141,52 @@ class _LiveCallScreenState extends ConsumerState<LiveCallScreen> {
 
     if (loginResult.errorCode != 0) return;
 
-    // Start local preview then publish
+    // 1. Create the canvas view widget first
     final localWidget = await ZegoExpressEngine.instance.createCanvasView(
-      (viewID) async {
+      (viewID) {
         _localViewId = viewID;
-        await ZegoExpressEngine.instance.startPreview(
-          canvas: ZegoCanvas(_localViewId!),
-        );
-        debugPrint('[ZEGO] preview started, publishing $_myStreamId');
-        await ZegoExpressEngine.instance.startPublishingStream(_myStreamId!);
       },
     );
-    if (mounted) setState(() => _localView = localWidget);
+
+    // 2. Add it to the widget tree so the native view is fully attached
+    if (!mounted) return;
+    setState(() => _localView = localWidget);
+
+    // 3. Small delay to let the native view attach to the render tree
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    if (!mounted) return;
+
+    // 4. Now start preview and publish — view is guaranteed to be attached
+    debugPrint('[ZEGO] starting preview on viewId=$_localViewId');
+    await ZegoExpressEngine.instance.startPreview(
+      canvas: ZegoCanvas(_localViewId!),
+    );
+    debugPrint('[ZEGO] preview started, publishing $_myStreamId');
+    await ZegoExpressEngine.instance.startPublishingStream(_myStreamId!);
   }
 
   Future<void> _setupRemoteView(String streamId) async {
+    // 1. Create canvas widget
     final remoteWidget = await ZegoExpressEngine.instance.createCanvasView(
-      (viewID) async {
+      (viewID) {
         _remoteViewId = viewID;
-        await ZegoExpressEngine.instance.startPlayingStream(
-          streamId,
-          canvas: ZegoCanvas(_remoteViewId!),
-        );
       },
     );
-    if (mounted) setState(() => _remoteView = remoteWidget);
+
+    // 2. Attach to widget tree first
+    if (!mounted) return;
+    setState(() => _remoteView = remoteWidget);
+
+    // 3. Wait for native view to attach
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    if (!mounted) return;
+
+    // 4. Now start playing the remote stream
+    debugPrint('[ZEGO] playing remote stream=$streamId on viewId=$_remoteViewId');
+    await ZegoExpressEngine.instance.startPlayingStream(
+      streamId,
+      canvas: ZegoCanvas(_remoteViewId!),
+    );
   }
 
   Future<void> _endCall() async {

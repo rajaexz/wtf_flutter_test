@@ -22,31 +22,113 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final _scheduledIds = <String>{};
 
+  // Tracks the last known status for each call request so we can detect changes.
+  final _prevStatus = <String, CallRequestStatus>{};
+
+  // One persistent bottom-sheet controller per pending request id.
+  final _sheetControllers = <String, PersistentBottomSheetController>{};
+
+  // Key to access ScaffoldState for showBottomSheet.
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  @override
+  void dispose() {
+    for (final c in _sheetControllers.values) {
+      c.close();
+    }
+    _sheetControllers.clear();
+    super.dispose();
+  }
+
+  void _handleRequestChanges(List<CallRequestEntity> requests) {
+    for (final r in requests) {
+      final prev = _prevStatus[r.id];
+      _prevStatus[r.id] = r.status;
+
+      // ── Schedule local reminder once when approved ──────────────────────────
+      if (r.status == CallRequestStatus.approved &&
+          !_scheduledIds.contains(r.id)) {
+        _scheduledIds.add(r.id);
+        NotificationService.instance.scheduleCallReminder(
+          callRequestId: r.id,
+          scheduledFor: r.scheduledFor,
+          title: 'Ready to join?',
+          body: 'Your call starts soon. Check mic and camera.',
+        );
+      }
+
+      // ── Open a persistent sheet for newly-pending requests ──────────────────
+      if (r.status == CallRequestStatus.pending &&
+          !_sheetControllers.containsKey(r.id)) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          final scaffoldState = _scaffoldKey.currentState;
+          if (scaffoldState == null) return;
+          final controller = scaffoldState.showBottomSheet(
+            enableDrag: false,
+            backgroundColor: Colors.transparent,
+            (_) => _PendingApprovalSheet(request: r),
+          );
+          _sheetControllers[r.id] = controller;
+        });
+      }
+
+      // ── Close the sheet when the request is no longer pending ───────────────
+      if (prev == CallRequestStatus.pending &&
+          r.status != CallRequestStatus.pending) {
+        final controller = _sheetControllers.remove(r.id);
+        controller?.close();
+
+        if (!mounted) return;
+        final ctx = _scaffoldKey.currentContext;
+        if (ctx == null) return;
+
+        if (r.status == CallRequestStatus.approved) {
+          ScaffoldMessenger.of(ctx).showSnackBar(
+            SnackBar(
+              content: const Text('✅ Call request approved by your trainer!'),
+              backgroundColor: AppColors.success,
+              duration: const Duration(seconds: 4),
+              action: SnackBarAction(
+                label: 'View',
+                textColor: Colors.white,
+                onPressed: () => ctx.push('/requests'),
+              ),
+            ),
+          );
+        } else if (r.status == CallRequestStatus.declined) {
+          ScaffoldMessenger.of(ctx).showSnackBar(
+            SnackBar(
+              content: Text(
+                r.declineReason != null && r.declineReason!.isNotEmpty
+                    ? 'Call declined: ${r.declineReason}'
+                    : 'Call request was declined.',
+              ),
+              backgroundColor: AppColors.error,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(currentUserProvider).valueOrNull;
     if (user == null) return const SizedBox.shrink();
 
-    // Keep requests synced + schedule local call alerts once per callRequestId
+    // Keep requests synced + react to status changes
     ref.watch(callRequestsProvider(user.id));
     ref.listen(callRequestsProvider(user.id), (_, next) {
-      for (final r in next.valueOrNull ?? const <CallRequestEntity>[]) {
-        if (r.status == CallRequestStatus.approved &&
-            !_scheduledIds.contains(r.id)) {
-          _scheduledIds.add(r.id);
-          NotificationService.instance.scheduleCallReminder(
-            callRequestId: r.id,
-            scheduledFor: r.scheduledFor,
-            title: 'Ready to join?',
-            body: 'Your call starts soon. Check mic and camera.',
-          );
-        }
-      }
+      final requests = next.valueOrNull ?? const <CallRequestEntity>[];
+      _handleRequestChanges(requests);
     });
 
     final upcoming = ref.watch(upcomingCallsProvider(user.id));
 
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: AppColors.background,
       body: SafeArea(
         child: CustomScrollView(
@@ -391,6 +473,66 @@ class _UpcomingCallCardState extends State<_UpcomingCallCard> {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _PendingApprovalSheet extends StatelessWidget {
+  final CallRequestEntity request;
+
+  const _PendingApprovalSheet({required this.request});
+
+  @override
+  Widget build(BuildContext context) {
+    final dt = request.scheduledFor;
+    final formatted =
+        '${dt.day}/${dt.month}/${dt.year} at ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.5)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Row(
+          children: [
+            const SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2.5),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Waiting for trainer approval…',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Call requested for $formatted',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -18,7 +18,7 @@ class ChatRepositoryImpl implements ChatRepository {
 
   static const _tokenServerUrl = String.fromEnvironment(
     'TOKEN_SERVER_URL',
-    defaultValue: 'http://192.168.1.2:3000',
+    defaultValue: 'http://192.168.1.3:3000',
   );
 
   final Map<String, StreamController<List<MessageEntity>>> _controllers = {};

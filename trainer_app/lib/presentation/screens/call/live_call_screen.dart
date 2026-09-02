@@ -9,9 +9,9 @@ import '../../providers/auth_provider.dart';
 import '../../providers/call_provider.dart';
 import '../../providers/repository_providers.dart';
 
-const int _zegoAppId = 1089980422;
+const int _zegoAppId = 726596021;
 const String _zegoAppSign =
-    'eb882413d26c8fe56b3588038b91a66b38e05573f2427ee46b4bcb6414d3eb97';
+    '1420338a20a5074e8f8e5c3eec76022ced98f3a0ddf3184fdc4d36ae389c5444';
 
 class LiveCallScreen extends ConsumerStatefulWidget {
   final String callRequestId;

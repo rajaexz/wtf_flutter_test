@@ -133,31 +133,50 @@ function setupSocketIo(httpServer) {
     if (userId) {
       if (!onlineUsers.has(userId)) onlineUsers.set(userId, new Set());
       onlineUsers.get(userId).add(socket.id);
-      io.emit('presence:online', { userId });
+      io.emit('presence:update', { userId, online: true });
       console.log(`[SOCKET] connected userId=${userId} socket=${socket.id}`);
     }
 
-    socket.on('chat:join', (chatId) => {
-      socket.join(`chat:${chatId}`);
+    socket.on('chat:join', (data) => {
+      const chatId = (data && typeof data === 'object') ? data.chatId : data;
+      if (chatId) socket.join(`chat:${chatId}`);
     });
 
-    socket.on('message:send', async (data) => {
+    socket.on('chat:leave', (data) => {
+      const chatId = (data && typeof data === 'object') ? data.chatId : data;
+      if (chatId) socket.leave(`chat:${chatId}`);
+    });
+
+    socket.on('message:send', async (data, ack) => {
       try {
         const { message } = await upsertChatMessage(data);
         broadcastMessage(message);
+        if (typeof ack === 'function') ack({ ok: true, message });
       } catch (e) {
-        socket.emit('error', { message: e.message });
+        if (typeof ack === 'function') ack({ ok: false, error: e.message });
+        else socket.emit('error', { message: e.message });
       }
     });
 
-    socket.on('message:read', (data) => {
-      if (!data.chatId || !data.userId) return;
+    socket.on('message:read', (data, ack) => {
+      if (!data.chatId || !data.userId) {
+        if (typeof ack === 'function') ack({ ok: false });
+        return;
+      }
       const updated = markChatRead(data.chatId, data.userId);
       broadcastRead({ chatId: data.chatId, userId: data.userId, updated });
+      if (typeof ack === 'function') ack({ ok: true, updated });
     });
 
-    socket.on('typing:on',  (data) => { if (data.chatId) socket.to(`chat:${data.chatId}`).emit('typing:on',  data); });
-    socket.on('typing:off', (data) => { if (data.chatId) socket.to(`chat:${data.chatId}`).emit('typing:off', data); });
+    socket.on('typing:start', (data) => { if (data.chatId) socket.to(`chat:${data.chatId}`).emit('typing:start', data); });
+    socket.on('typing:stop',  (data) => { if (data.chatId) socket.to(`chat:${data.chatId}`).emit('typing:stop',  data); });
+
+    socket.on('presence:query', (data, ack) => {
+      const userIds = (data && Array.isArray(data.userIds)) ? data.userIds : [];
+      const result = {};
+      for (const uid of userIds) result[uid] = onlineUsers.has(uid);
+      if (typeof ack === 'function') ack({ online: result });
+    });
 
     socket.on('disconnect', () => {
       if (userId) {
@@ -166,7 +185,7 @@ function setupSocketIo(httpServer) {
           set.delete(socket.id);
           if (set.size === 0) {
             onlineUsers.delete(userId);
-            io.emit('presence:offline', { userId });
+            io.emit('presence:update', { userId, online: false });
           }
         }
         console.log(`[SOCKET] disconnected userId=${userId} socket=${socket.id}`);
@@ -454,7 +473,7 @@ startCallReminderLoop();
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`\n[SERVER] ✅ Running on http://0.0.0.0:${PORT}`);
-  console.log(`[SERVER] 📱 LAN access: http://192.168.1.2:${PORT}`);
+  console.log(`[SERVER] 📱 LAN access: http://192.168.1.3:${PORT}`);
   console.log(`[SERVER] 🔥 Firebase: ${firebaseReady ? 'ON' : 'OFF (FCM push disabled)'}`);
   console.log('[SERVER] Routes:');
   console.log('  GET  /health');

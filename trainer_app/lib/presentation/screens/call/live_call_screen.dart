@@ -27,6 +27,7 @@ class _LiveCallScreenState extends ConsumerState<LiveCallScreen> {
   bool _isCameraOff = false;
   bool _isFront = true;
   bool _remoteJoined = false;
+  bool _remoteSetupInProgress = false;
 
   Widget? _localView;
   Widget? _remoteView;
@@ -35,7 +36,7 @@ class _LiveCallScreenState extends ConsumerState<LiveCallScreen> {
   String? _remoteStreamId;
 
   String? _myStreamId;
-  String? _myUserId; // Zego userId used at login — used to filter self out of user/stream updates
+  String? _myUserId;
 
   @override
   void initState() {
@@ -43,10 +44,16 @@ class _LiveCallScreenState extends ConsumerState<LiveCallScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _startCall());
   }
 
-  // roomId: first 18 alphanum chars of callRequestId — same on both sides
+  // roomId = full stripped callRequestId, max 64 chars (Zego limit)
   String get _roomId {
     final clean = widget.callRequestId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
-    return clean.substring(0, clean.length.clamp(0, 18));
+    return clean.substring(0, clean.length.clamp(1, 64));
+  }
+
+  bool _isOwnStream(String streamId) {
+    if (_myStreamId != null && streamId == _myStreamId) return true;
+    if (_myUserId != null && streamId.endsWith('_$_myUserId')) return true;
+    return false;
   }
 
   Future<void> _startCall() async {
@@ -56,12 +63,10 @@ class _LiveCallScreenState extends ConsumerState<LiveCallScreen> {
 
     ref.read(callProvider.notifier).onCallStarted(widget.callRequestId);
 
-    // userId: strip special chars, max 20 chars
-    final userId = user.id
-        .replaceAll(RegExp(r'[^a-zA-Z0-9]'), '')
-        .substring(0, user.id.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').length.clamp(0, 20));
+    // userId: strip special chars, max 64 chars (Zego limit)
+    final rawId = user.id.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '');
+    final userId = rawId.substring(0, rawId.length.clamp(1, 64));
 
-    // Stream this user publishes — must be unique per user in the room
     _myStreamId = '${_roomId}_$userId';
     _myUserId = userId;
 
@@ -73,39 +78,37 @@ class _LiveCallScreenState extends ConsumerState<LiveCallScreen> {
       appSign: _zegoAppSign,
     ));
 
-    // Register ALL callbacks BEFORE loginRoom — events fire immediately on join
-    ZegoExpressEngine.onRoomStateUpdate =
-        (roomID, state, errorCode, extendedData) {
-      debugPrint('[ZEGO] roomState=$state errorCode=$errorCode');
+    // ── Register callbacks BEFORE loginRoom ────────────────────────────────
+    ZegoExpressEngine.onRoomStateUpdate = (roomID, state, errorCode, extendedData) {
+      debugPrint('[ZEGO] roomState=$state error=$errorCode');
     };
 
     ZegoExpressEngine.onRoomUserUpdate = (roomID, updateType, userList) {
       if (!mounted) return;
-      // Filter out self — Zego may include the local user in the update list
       final remoteUsers = userList.where((u) => u.userID != _myUserId).toList();
-      debugPrint('[ZEGO] userUpdate type=$updateType remoteUsers=${remoteUsers.map((u) => u.userID)}');
+      debugPrint('[ZEGO] userUpdate=$updateType users=${remoteUsers.map((u) => u.userID)}');
       if (updateType == ZegoUpdateType.Add && remoteUsers.isNotEmpty) {
-        setState(() => _remoteJoined = true);
+        if (mounted) setState(() => _remoteJoined = true);
       } else if (updateType == ZegoUpdateType.Delete && remoteUsers.isNotEmpty) {
-        setState(() {
-          _remoteJoined = false;
-          _remoteView = null;
-          _remoteViewId = null;
-        });
+        if (mounted) {
+          setState(() {
+            _remoteJoined = false;
+            _remoteView = null;
+            _remoteViewId = null;
+            _remoteSetupInProgress = false;
+          });
+        }
       }
     };
 
-    ZegoExpressEngine.onRoomStreamUpdate =
-        (roomID, updateType, streamList, extendedData) async {
-      debugPrint('[ZEGO] streamUpdate type=$updateType streams=${streamList.map((s) => s.streamID)}');
+    ZegoExpressEngine.onRoomStreamUpdate = (roomID, updateType, streamList, extendedData) async {
+      debugPrint('[ZEGO] streamUpdate=$updateType streams=${streamList.map((s) => s.streamID)}');
       if (updateType == ZegoUpdateType.Add) {
         for (final stream in streamList) {
-          // Skip our own stream — identified by stream ID or by userId suffix
-          if (stream.streamID == _myStreamId) continue;
-          if (_myUserId != null && stream.streamID.endsWith('_$_myUserId')) continue;
-          // Only set up remote view once — guard against duplicate Add events
-          if (_remoteViewId != null) continue;
+          if (_isOwnStream(stream.streamID)) continue;
+          if (_remoteViewId != null || _remoteSetupInProgress) continue;
           _remoteStreamId = stream.streamID;
+          _remoteSetupInProgress = true;
           if (mounted) await _setupRemoteView(_remoteStreamId!);
         }
       } else if (updateType == ZegoUpdateType.Delete) {
@@ -114,21 +117,21 @@ class _LiveCallScreenState extends ConsumerState<LiveCallScreen> {
             _remoteView = null;
             _remoteViewId = null;
             _remoteStreamId = null;
+            _remoteSetupInProgress = false;
           });
         }
       }
     };
 
-    ZegoExpressEngine.onPublisherStateUpdate =
-        (streamID, state, errorCode, extendedData) {
-      debugPrint('[ZEGO] publishState=$state streamID=$streamID errorCode=$errorCode');
+    ZegoExpressEngine.onPublisherStateUpdate = (streamID, state, errorCode, extendedData) {
+      debugPrint('[ZEGO] publish state=$state stream=$streamID error=$errorCode');
     };
 
-    ZegoExpressEngine.onPlayerStateUpdate =
-        (streamID, state, errorCode, extendedData) {
-      debugPrint('[ZEGO] playState=$state streamID=$streamID errorCode=$errorCode');
+    ZegoExpressEngine.onPlayerStateUpdate = (streamID, state, errorCode, extendedData) {
+      debugPrint('[ZEGO] player state=$state stream=$streamID error=$errorCode');
     };
 
+    // ── Login ──────────────────────────────────────────────────────────────
     final config = ZegoRoomConfig.defaultConfig();
     config.isUserStatusNotify = true;
 
@@ -137,56 +140,56 @@ class _LiveCallScreenState extends ConsumerState<LiveCallScreen> {
       ZegoUser(userId, user.name),
       config: config,
     );
-    debugPrint('[ZEGO] loginRoom errorCode=${loginResult.errorCode}');
+    debugPrint('[ZEGO] loginRoom result=${loginResult.errorCode}');
 
-    if (loginResult.errorCode != 0) return;
+    if (loginResult.errorCode != 0) {
+      debugPrint('[ZEGO] ❌ loginRoom failed — cannot start call');
+      return;
+    }
 
-    // 1. Create the canvas view widget first
-    final localWidget = await ZegoExpressEngine.instance.createCanvasView(
-      (viewID) {
-        _localViewId = viewID;
-      },
-    );
+    // ── Local preview ──────────────────────────────────────────────────────
+    final localWidget = await ZegoExpressEngine.instance.createCanvasView((viewID) {
+      _localViewId = viewID;
+    });
 
-    // 2. Add it to the widget tree so the native view is fully attached
     if (!mounted) return;
     setState(() => _localView = localWidget);
 
-    // 3. Small delay to let the native view attach to the render tree
-    await Future<void>.delayed(const Duration(milliseconds: 300));
+    await Future<void>.delayed(const Duration(milliseconds: 500));
     if (!mounted) return;
 
-    // 4. Now start preview and publish — view is guaranteed to be attached
-    debugPrint('[ZEGO] starting preview on viewId=$_localViewId');
-    await ZegoExpressEngine.instance.startPreview(
-      canvas: ZegoCanvas(_localViewId!),
-    );
-    debugPrint('[ZEGO] preview started, publishing $_myStreamId');
+    debugPrint('[ZEGO] startPreview viewId=$_localViewId');
+    await ZegoExpressEngine.instance.startPreview(canvas: ZegoCanvas(_localViewId!));
+
+    debugPrint('[ZEGO] startPublishing stream=$_myStreamId');
     await ZegoExpressEngine.instance.startPublishingStream(_myStreamId!);
   }
 
   Future<void> _setupRemoteView(String streamId) async {
-    // 1. Create canvas widget
-    final remoteWidget = await ZegoExpressEngine.instance.createCanvasView(
-      (viewID) {
-        _remoteViewId = viewID;
-      },
-    );
+    debugPrint('[ZEGO] _setupRemoteView stream=$streamId');
 
-    // 2. Attach to widget tree first
-    if (!mounted) return;
+    final remoteWidget = await ZegoExpressEngine.instance.createCanvasView((viewID) {
+      _remoteViewId = viewID;
+    });
+
+    if (!mounted) {
+      _remoteSetupInProgress = false;
+      return;
+    }
     setState(() => _remoteView = remoteWidget);
 
-    // 3. Wait for native view to attach
-    await Future<void>.delayed(const Duration(milliseconds: 300));
-    if (!mounted) return;
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    if (!mounted) {
+      _remoteSetupInProgress = false;
+      return;
+    }
 
-    // 4. Now start playing the remote stream
-    debugPrint('[ZEGO] playing remote stream=$streamId on viewId=$_remoteViewId');
+    debugPrint('[ZEGO] startPlayingStream stream=$streamId viewId=$_remoteViewId');
     await ZegoExpressEngine.instance.startPlayingStream(
       streamId,
       canvas: ZegoCanvas(_remoteViewId!),
     );
+    _remoteSetupInProgress = false;
   }
 
   Future<void> _endCall() async {

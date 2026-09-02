@@ -35,6 +35,7 @@ class _LiveCallScreenState extends ConsumerState<LiveCallScreen> {
   String? _remoteStreamId;
 
   String? _myStreamId;
+  String? _myUserId; // Zego userId used at login — used to filter self out of user/stream updates
 
   @override
   void initState() {
@@ -62,6 +63,7 @@ class _LiveCallScreenState extends ConsumerState<LiveCallScreen> {
 
     // Stream this user publishes — must be unique per user in the room
     _myStreamId = '${_roomId}_$userId';
+    _myUserId = userId;
 
     debugPrint('[ZEGO] roomId=$_roomId  userId=$userId  myStream=$_myStreamId');
 
@@ -79,10 +81,12 @@ class _LiveCallScreenState extends ConsumerState<LiveCallScreen> {
 
     ZegoExpressEngine.onRoomUserUpdate = (roomID, updateType, userList) {
       if (!mounted) return;
-      debugPrint('[ZEGO] userUpdate type=$updateType users=${userList.map((u) => u.userID)}');
-      if (updateType == ZegoUpdateType.Add) {
+      // Filter out self — Zego may include the local user in the update list
+      final remoteUsers = userList.where((u) => u.userID != _myUserId).toList();
+      debugPrint('[ZEGO] userUpdate type=$updateType remoteUsers=${remoteUsers.map((u) => u.userID)}');
+      if (updateType == ZegoUpdateType.Add && remoteUsers.isNotEmpty) {
         setState(() => _remoteJoined = true);
-      } else {
+      } else if (updateType == ZegoUpdateType.Delete && remoteUsers.isNotEmpty) {
         setState(() {
           _remoteJoined = false;
           _remoteView = null;
@@ -96,8 +100,11 @@ class _LiveCallScreenState extends ConsumerState<LiveCallScreen> {
       debugPrint('[ZEGO] streamUpdate type=$updateType streams=${streamList.map((s) => s.streamID)}');
       if (updateType == ZegoUpdateType.Add) {
         for (final stream in streamList) {
-          // Don't play our own stream
+          // Skip our own stream — identified by stream ID prefix OR by userId embedded in streamID
           if (stream.streamID == _myStreamId) continue;
+          if (_myUserId != null && stream.streamID.endsWith('_$_myUserId')) continue;
+          // Only set up remote view once — guard against duplicate Add events
+          if (_remoteViewId != null) continue;
           _remoteStreamId = stream.streamID;
           if (mounted) await _setupRemoteView(_remoteStreamId!);
         }
